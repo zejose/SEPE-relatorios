@@ -6,39 +6,3 @@ docx2pdf
 pandas
 pywin32
 requests
-```
-
-### 2. **Renomear o arquivo principal**
-Renomeie `app_sepe.py` para `main.py` (ou mantenha como está, ambos funcionam)
-
-### 3. **.gitignore**
-Crie um arquivo `.gitignore` para não enviar arquivos desnecessários:
-```
-# Python
-__pycache__/
-*.py[cod]
-*$py.class
-*.so
-.Python
-env/
-venv/
-.venv/
-ENV/
-
-# Streamlit
-.streamlit/
-
-# IDEs
-.vscode/
-.idea/
-*.swp
-*.swo
-
-# OS
-.DS_Store
-Thumbs.db
-
-# Arquivos temporários
-*.tmp
-*.log
-C:/arquivos_sepe/
