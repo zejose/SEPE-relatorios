@@ -2,7 +2,6 @@ import streamlit as st
 import openpyxl
 from openpyxl import Workbook
 import csv
-from docx2pdf import convert
 from docxtpl import DocxTemplate, InlineImage
 from docx.shared import Cm
 import os
@@ -13,7 +12,6 @@ import zipfile
 import pythoncom
 import sys
 import pandas as pd
-from pyodk.client import Client
 import requests
 from requests.auth import HTTPBasicAuth
 
@@ -27,46 +25,46 @@ tab1, tab2 = st.tabs(["📡 Conectar ao ODK Central", "📁 Upload de Arquivo CS
 
 with tab1:
     st.subheader("🔗 Conexão com ODK Central")
-
+    
     col_odk1, col_odk2 = st.columns(2)
-
+    
     with col_odk1:
         odk_url = st.text_input(
             "URL do ODK Central",
             value="https://levantamentos.dflegal.df.gov.br",
             help="URL base do servidor ODK Central"
         )
-
+        
         odk_project_id = st.text_input(
             "ID do Projeto",
             value="4",
             help="ID numérico do projeto"
         )
-
+        
         odk_form_id = st.text_input(
             "ID do Formulário",
             value="aWX8oXGiD9zmcpDX7KtAer",
             help="ID do formulário"
         )
-
+    
     with col_odk2:
         odk_email = st.text_input(
             "Email",
             help="Email de usuário do ODK Central"
         )
-
+        
         odk_password = st.text_input(
             "Senha",
             type="password",
             help="Senha do usuário"
         )
-
+        
         baixar_anexos = st.checkbox(
             "Baixar anexos (imagens)",
             value=True,
             help="Baixa automaticamente as imagens enviadas no formulário"
         )
-
+    
     if st.button("🔄 Conectar e Buscar Dados", type="primary", use_container_width=True):
         if not odk_email or not odk_password:
             st.error("❌ Por favor, preencha email e senha!")
@@ -76,81 +74,81 @@ with tab1:
                     # Usar requests diretamente para maior controle
                     base_url = f"{odk_url}/v1/projects/{odk_project_id}/forms/{odk_form_id}"
                     auth = HTTPBasicAuth(odk_email, odk_password)
-
+                    
                     # Buscar submissions via API REST
                     st.info("Buscando dados do formulário...")
-
+                    
                     # Endpoint para submissions em formato .csv.zip
                     csv_url = f"{base_url}/submissions.csv.zip"
-
+                    
                     response = requests.get(csv_url, auth=auth)
                     response.raise_for_status()
-
+                    
                     # Extrair CSV do ZIP
                     import io
                     from zipfile import ZipFile
-
+                    
                     zip_buffer = io.BytesIO(response.content)
-
+                    
                     with ZipFile(zip_buffer, 'r') as zip_file:
                         # Pegar o primeiro arquivo CSV do ZIP
                         csv_filename = [f for f in zip_file.namelist() if f.endswith('.csv')][0]
                         csv_content = zip_file.read(csv_filename).decode('utf-8')
-
+                    
                     # Salvar em session_state
                     st.session_state['csv_data'] = csv_content
                     st.session_state['data_source'] = 'odk'
-
+                    
                     # Contar registros
                     num_linhas = len(csv_content.split('\n')) - 1  # -1 para excluir header
-
+                    
                     # Baixar anexos se solicitado
                     if baixar_anexos:
                         st.info("Baixando anexos (imagens)...")
-
+                        
                         # Criar diretório se não existir
                         os.makedirs('C:/arquivos_sepe/media', exist_ok=True)
-
+                        
                         try:
                             # Buscar lista de submissions para pegar os IDs
                             submissions_url = f"{base_url}/submissions"
                             submissions_response = requests.get(submissions_url, auth=auth)
                             submissions_response.raise_for_status()
                             submissions_data = submissions_response.json()
-
+                            
                             total_anexos = 0
-
+                            
                             # Para cada submission, baixar seus anexos
                             for submission in submissions_data:
                                 instance_id = submission.get('instanceId')
-
+                                
                                 # Buscar anexos desta submission
                                 attachments_url = f"{base_url}/submissions/{instance_id}/attachments"
                                 att_response = requests.get(attachments_url, auth=auth)
-
+                                
                                 if att_response.status_code == 200:
                                     attachments = att_response.json()
-
+                                    
                                     for attachment in attachments:
                                         att_name = attachment.get('name')
-
+                                        
                                         # Baixar o arquivo
                                         att_download_url = f"{attachments_url}/{att_name}"
                                         file_response = requests.get(att_download_url, auth=auth)
-
+                                        
                                         if file_response.status_code == 200:
                                             file_path = os.path.join('C:/arquivos_sepe/media', att_name)
                                             with open(file_path, 'wb') as f:
                                                 f.write(file_response.content)
                                             total_anexos += 1
-
+                            
                             st.success(f"✅ {total_anexos} anexos baixados para C:/arquivos_sepe/media")
                         except Exception as e:
                             st.warning(f"⚠️ Aviso ao baixar anexos: {str(e)}")
-
+                    
                     st.success(f"✅ Conectado com sucesso! {num_linhas} registros encontrados.")
                     st.rerun()
-
+                    
             except Exception as e:
                 st.error(f"❌ Erro ao conectar: {str(e)}")
                 st.exception(e)
@@ -158,7 +156,7 @@ with tab1:
 with tab2:
     st.subheader("📄 Upload Manual de CSV")
     csv_file_upload = st.file_uploader("Selecione o arquivo CSV", type=['csv'])
-
+    
     if csv_file_upload:
         st.session_state['csv_data'] = csv_file_upload.getvalue().decode('utf-8')
         st.session_state['data_source'] = 'upload'
@@ -171,12 +169,10 @@ csv_file = None
 if 'csv_data' in st.session_state:
     # Converter dados para formato compatível
     from io import StringIO, BytesIO
-
     csv_file = BytesIO(st.session_state['csv_data'].encode('utf-8'))
-
+    
     fonte = "ODK Central" if st.session_state.get('data_source') == 'odk' else "Upload Manual"
     st.info(f"📊 Dados carregados de: **{fonte}**")
-
 
 # Criar diretórios temporários
 @st.cache_resource
@@ -194,61 +190,63 @@ def criar_diretorios_temp():
         os.makedirs(d, exist_ok=True)
     return dirs
 
-
 def converter_csv_para_xlsx(csv_file, xlsx_path):
     """Converte CSV para XLSX com coluna de numeração"""
     wb = Workbook()
     ws = wb.active
     ws.title = 'dados_vistoria'
-
+    
     # Decodificar o arquivo CSV
     csv_content = csv_file.getvalue().decode('utf-8').splitlines()
     csv_reader = csv.reader(csv_content, delimiter=',')
-
+    
     for row_index, row in enumerate(csv_reader, start=1):
         ws.cell(row=row_index, column=1, value=row_index)
         for col_index, value in enumerate(row, start=2):
             ws.cell(row=row_index, column=col_index, value=value)
-
+    
     wb.save(xlsx_path)
     return xlsx_path
 
-
 def processar_relatorios(xlsx_path, modelo_path, dirs, indices_selecionados=None):
-    """Processa e gera os relatórios em PDF"""
+    """Processa e gera os relatórios em DOCX"""
     # Inicializar COM para evitar erros no Windows
-    pythoncom.CoInitialize()
-
+    try:
+        pythoncom.CoInitialize()
+        com_initialized = True
+    except:
+        com_initialized = False
+    
     try:
         workbook = openpyxl.load_workbook(xlsx_path)
         sheet = workbook['dados_vistoria']
         list_values = list(sheet.values)
-
+        
         relatorios_gerados = []
         progress_bar = st.progress(0)
         status_text = st.empty()
-
+        
         # Filtrar apenas os índices selecionados
         if indices_selecionados:
             dados_filtrados = [list_values[0]] + [list_values[i] for i in indices_selecionados if i < len(list_values)]
         else:
             dados_filtrados = list_values
-
+        
         total = len(dados_filtrados[1:])
-
+        
         for idx, valores in enumerate(dados_filtrados[1:], 1):
             status_text.text(f"Processando relatório {idx} de {total}: {valores[0]}")
             progress_bar.progress(idx / total)
-
+            
             doc = DocxTemplate(modelo_path)
-
+            
             # Processar imagens
             imagem1 = processar_imagem(doc, valores[12], dirs)
             imagem2 = processar_imagem(doc, valores[13], dirs)
             imagem3 = processar_imagem(doc, valores[14], dirs)
             imagem4 = processar_imagem(doc, valores[16], dirs)
             imagem5 = processar_imagem(doc, valores[18], dirs)
-
+            
             # Formatar data se necessário (converter de YYYY-MM-DD para DD-MM-YYYY)
             data_formatada = valores[2]
             if valores[2] and isinstance(valores[2], str):
@@ -262,7 +260,7 @@ def processar_relatorios(xlsx_path, modelo_path, dirs, indices_selecionados=None
                     data_formatada = dt.strftime('%d-%m-%Y')
                 except:
                     data_formatada = valores[2]  # Mantém original se falhar
-
+            
             # Renderizar documento
             doc.render({
                 'relatorio': valores[0],
@@ -281,25 +279,25 @@ def processar_relatorios(xlsx_path, modelo_path, dirs, indices_selecionados=None
                 'imagem_4': imagem4,
                 'imagem_5': imagem5
             })
-
-            # Salvar documento
+            
+            # Salvar documento DOCX
             doc_name = os.path.join(dirs['relatorios'], f"{valores[0]}.docx")
-            pdf_name = os.path.join(dirs['relatorios'], f"{valores[0]}.pdf")
-
             doc.save(doc_name)
-            convert(doc_name, pdf_name)
-
-            relatorios_gerados.append(pdf_name)
-
+            
+            relatorios_gerados.append(doc_name)
+        
         progress_bar.empty()
         status_text.empty()
-
+        
         return relatorios_gerados
-
+    
     finally:
-        # Sempre finalizar COM
-        pythoncom.CoUninitialize()
-
+        # Sempre finalizar COM se foi inicializado
+        if com_initialized:
+            try:
+                pythoncom.CoUninitialize()
+            except:
+                pass
 
 def processar_imagem(doc, valor_imagem, dirs):
     """Processa uma imagem para o relatório"""
@@ -311,16 +309,14 @@ def processar_imagem(doc, valor_imagem, dirs):
     else:
         imagem_path = f'C:/arquivos_sepe/media/{valor_imagem}'
         if os.path.exists(imagem_path):
-            return InlineImage(doc, imagem_path, Cm(15))
+            return InlineImage(doc, imagem_path, Cm(7))
         return None
-
 
 def criar_zip(arquivos, zip_path):
     """Cria um arquivo ZIP com os relatórios"""
     with zipfile.ZipFile(zip_path, 'w') as zipf:
         for arquivo in arquivos:
             zipf.write(arquivo, os.path.basename(arquivo))
-
 
 # Interface principal
 dirs = criar_diretorios_temp()
@@ -335,16 +331,15 @@ with col2:
     st.subheader("📁 Diretórios de Imagens")
     st.info("**Imagem padrão:** `C:/arquivos_sepe/xxx.jpg`")
     st.info("**Imagens do projeto:** `C:/arquivos_sepe/media/`")
-
+    
     # Verificar se os diretórios existem
     if os.path.exists('C:/arquivos_sepe/xxx.jpg'):
         st.success("✅ Imagem padrão encontrada")
     else:
         st.warning("⚠️ Imagem padrão não encontrada")
-
+    
     if os.path.exists('C:/arquivos_sepe/media'):
-        num_imagens = len(
-            [f for f in os.listdir('C:/arquivos_sepe/media') if f.lower().endswith(('.jpg', '.jpeg', '.png'))])
+        num_imagens = len([f for f in os.listdir('C:/arquivos_sepe/media') if f.lower().endswith(('.jpg', '.jpeg', '.png'))])
         st.success(f"✅ Diretório de imagens encontrado ({num_imagens} imagens)")
     else:
         st.warning("⚠️ Diretório de imagens não encontrado")
@@ -354,25 +349,25 @@ st.markdown("---")
 # Seção de preview e seleção de relatórios
 if csv_file is not None:
     st.subheader("📋 Visualizar e Selecionar Relatórios")
-
+    
     # Ler CSV permitindo colunas duplicadas
     csv_file.seek(0)
     csv_text = csv_file.read().decode('utf-8')
-
+    
     # Processar linha por linha
     lines = csv_text.strip().split('\n')
-
+    
     if len(lines) > 1:
         import csv
-
+        
         # Ler header usando csv.reader (trata vírgulas entre aspas)
         header_reader = csv.reader([lines[0]])
         original_cols = next(header_reader)
-
+        
         # Fazer renomeação GARANTIDA de duplicatas
         seen = {}
         unique_cols = []
-
+        
         for col in original_cols:
             col = col.strip()
             if col not in seen:
@@ -381,14 +376,14 @@ if csv_file is not None:
             else:
                 seen[col] += 1
                 unique_cols.append(f"{col}_dup{seen[col]}")
-
+        
         # Ler dados (pular header)
         data_reader = csv.reader(lines[1:])
         data_rows = [row for row in data_reader if row]  # Remove linhas vazias
-
+        
         # Criar DataFrame COM NOMES ÚNICOS GARANTIDOS
         df = pd.DataFrame(data_rows, columns=unique_cols)
-
+        
         # VERIFICAÇÃO FINAL - se ainda houver duplicatas, adicionar índice
         final_cols = []
         for i, col in enumerate(df.columns):
@@ -396,22 +391,21 @@ if csv_file is not None:
                 final_cols.append(f"{col}_idx{i}")
             else:
                 final_cols.append(col)
-
+        
         df.columns = final_cols
-
+        
         # Adicionar coluna de numeração
         df.insert(0, '#', range(1, len(df) + 1))
-
+        
         header = df.columns.tolist()
-
+        
         # DEBUG: Verificar se ainda há duplicatas
         if len(header) != len(set(header)):
             st.error(f"🔴 AINDA HÁ DUPLICATAS: {[h for h in header if header.count(h) > 1]}")
             st.stop()
-
+        
         # Formatar a coluna SubmissionDate se existir
-        submission_date_cols = [col for col in df.columns if
-                                'SubmissionDate' in col and not col.endswith(tuple('0123456789'))]
+        submission_date_cols = [col for col in df.columns if 'SubmissionDate' in col and not col.endswith(tuple('0123456789'))]
         if submission_date_cols:
             try:
                 col_name = submission_date_cols[0]
@@ -419,58 +413,58 @@ if csv_file is not None:
                 df[col_name] = df[col_name].dt.strftime('%d-%m-%Y')
             except:
                 pass
-
+            
         # Mostrar informações resumidas
         st.info(f"📊 Total de relatórios disponíveis: **{len(df)}**")
-
+        
         # Opções de seleção
         col_sel1, col_sel2 = st.columns([1, 3])
-
+        
         with col_sel1:
             selecao_tipo = st.radio(
                 "Tipo de seleção:",
                 ["Todos os relatórios", "Selecionar específicos"],
                 key="tipo_selecao"
             )
-
+        
         with col_sel2:
             if selecao_tipo == "Selecionar específicos":
                 # Mostrar colunas importantes para seleção
                 colunas_display = ['#']
                 if len(header) > 1:
                     colunas_display.append(header[1])
-
+                
                 # Adicionar SubmissionDate (procurar sem sufixo _dup)
                 submission_cols = [col for col in header if 'SubmissionDate' in col]
                 if submission_cols:
                     colunas_display.append(submission_cols[0])
                 elif len(header) > 3:
                     colunas_display.append(header[3])
-
+                
                 if len(header) > 7:
                     colunas_display.append(header[7])
                 if len(header) > 6:
                     colunas_display.append(header[6])
-
+                
                 # REMOVER DUPLICATAS da lista de colunas_display
                 colunas_display_unique = []
                 for col in colunas_display:
                     if col not in colunas_display_unique and col in df.columns:
                         colunas_display_unique.append(col)
-
+                
                 # COPIAR DataFrame para evitar referência
                 df_display = df[colunas_display_unique].copy()
                 df_display = df_display.reset_index(drop=True)
-
+                
                 st.dataframe(df_display, width="stretch", height=400)
-
+                
                 # Input para seleção de números
                 numeros_selecionados = st.text_input(
                     "Digite os números dos relatórios (separados por vírgula):",
                     placeholder="Ex: 1, 3, 5, 7-10",
                     help="Você pode usar vírgulas para separar números individuais ou hífen para intervalos"
                 )
-
+                
                 # Processar seleção
                 indices_selecionados = []
                 if numeros_selecionados:
@@ -483,10 +477,9 @@ if csv_file is not None:
                                 indices_selecionados.extend(range(inicio, fim + 1))
                             else:
                                 indices_selecionados.append(int(parte))
-
+                        
                         indices_selecionados = sorted(set(indices_selecionados))
-                        st.success(
-                            f"✅ {len(indices_selecionados)} relatórios selecionados: {', '.join(map(str, indices_selecionados))}")
+                        st.success(f"✅ {len(indices_selecionados)} relatórios selecionados: {', '.join(map(str, indices_selecionados))}")
                     except:
                         st.error("❌ Formato inválido. Use números separados por vírgula ou intervalos com hífen.")
             else:
@@ -494,34 +487,34 @@ if csv_file is not None:
                 colunas_display = ['#']
                 if len(header) > 1:
                     colunas_display.append(header[1])
-
+                
                 # Adicionar SubmissionDate (procurar sem sufixo _dup)
                 submission_cols = [col for col in header if 'SubmissionDate' in col]
                 if submission_cols:
                     colunas_display.append(submission_cols[0])
                 elif len(header) > 3:
                     colunas_display.append(header[3])
-
+                
                 if len(header) > 7:
                     colunas_display.append(header[7])
                 if len(header) > 6:
                     colunas_display.append(header[6])
                 if len(header) > 12:
                     colunas_display.append(header[12])
-
+                
                 # REMOVER DUPLICATAS da lista de colunas_display
                 colunas_display_unique = []
                 for col in colunas_display:
                     if col not in colunas_display_unique and col in df.columns:
                         colunas_display_unique.append(col)
-
+                
                 # COPIAR DataFrame para evitar referência
                 df_display = df[colunas_display_unique].copy()
                 df_display = df_display.reset_index(drop=True)
-
+                
                 st.dataframe(df_display, width="stretch", height=400)
                 st.caption(f"📊 Mostrando todos os {len(df)} relatórios")
-
+                
                 indices_selecionados = list(range(1, len(df) + 1))
     else:
         st.warning("⚠️ O arquivo CSV está vazio.")
@@ -538,7 +531,7 @@ if not botao_habilitado and csv_file is not None and modelo_file is not None:
     st.warning("⚠️ Nenhum relatório selecionado. Por favor, selecione ao menos um relatório.")
 
 if st.button("🚀 Gerar Relatórios", type="primary", use_container_width=True, disabled=not botao_habilitado):
-
+    
     if not csv_file:
         st.error("❌ Por favor, faça upload do arquivo CSV!")
     elif not modelo_file:
@@ -550,37 +543,37 @@ if st.button("🚀 Gerar Relatórios", type="primary", use_container_width=True,
     else:
         try:
             with st.spinner("Processando..."):
-
+                
                 # Salvar modelo
                 modelo_path = os.path.join(dirs['modelo'], 'formulario.docx')
                 with open(modelo_path, 'wb') as f:
                     f.write(modelo_file.getbuffer())
-
+                
                 # Converter CSV para XLSX
                 st.info("Convertendo CSV para XLSX...")
                 xlsx_path = os.path.join(dirs['xlsx'], 'dados.xlsx')
                 converter_csv_para_xlsx(csv_file, xlsx_path)
-
+                
                 # Processar relatórios
                 st.info("Gerando relatórios...")
                 relatorios = processar_relatorios(xlsx_path, modelo_path, dirs, indices_selecionados)
-
+                
                 # Criar ZIP
                 zip_path = os.path.join(dirs['base'], 'relatorios.zip')
                 criar_zip(relatorios, zip_path)
-
+                
                 st.success(f"✅ {len(relatorios)} relatórios gerados com sucesso!")
-
+                
                 # Download do ZIP
                 with open(zip_path, 'rb') as f:
                     st.download_button(
-                        label="📥 Download de Todos os Relatórios (ZIP)",
+                        label="📥 Download de Todos os Relatórios DOCX (ZIP)",
                         data=f,
                         file_name="relatorios_vistoria.zip",
                         mime="application/zip",
                         use_container_width=True
                     )
-
+                
         except Exception as e:
             st.error(f"❌ Erro ao processar: {str(e)}")
             st.exception(e)
