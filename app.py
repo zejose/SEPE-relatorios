@@ -105,8 +105,9 @@ with tab1:
                     if baixar_anexos:
                         st.info("Baixando anexos (imagens)...")
                         
-                        # Criar diretório se não existir
-                        os.makedirs('C:/arquivos_sepe/media', exist_ok=True)
+                        # Inicializar attachments em session_state
+                        if 'attachments' not in st.session_state:
+                            st.session_state['attachments'] = {}
                         
                         try:
                             # Buscar lista de submissions para pegar os IDs
@@ -136,12 +137,11 @@ with tab1:
                                         file_response = requests.get(att_download_url, auth=auth)
                                         
                                         if file_response.status_code == 200:
-                                            file_path = os.path.join('C:/arquivos_sepe/media', att_name)
-                                            with open(file_path, 'wb') as f:
-                                                f.write(file_response.content)
+                                            # Salvar em session_state para uso posterior
+                                            st.session_state['attachments'][att_name] = file_response.content
                                             total_anexos += 1
                             
-                            st.success(f"✅ {total_anexos} anexos baixados para C:/arquivos_sepe/media")
+                            st.success(f"✅ {total_anexos} anexos baixados com sucesso")
                         except Exception as e:
                             st.warning(f"⚠️ Aviso ao baixar anexos: {str(e)}")
                     
@@ -183,7 +183,8 @@ def criar_diretorios_temp():
         'relatorios': os.path.join(temp_dir, 'relatorios_pdf'),
         'media': os.path.join(temp_dir, 'media'),
         'sem_media': os.path.join(temp_dir, 'sem_media'),
-        'modelo': os.path.join(temp_dir, 'modelo_relatorio')
+        'modelo': os.path.join(temp_dir, 'modelo_relatorio'),
+        'default_img': os.path.join(temp_dir, 'default_img')
     }
     for d in dirs.values():
         os.makedirs(d, exist_ok=True)
@@ -207,12 +208,88 @@ def converter_csv_para_xlsx(csv_file, xlsx_path):
     wb.save(xlsx_path)
     return xlsx_path
 
-def processar_relatorios(xlsx_path, modelo_path, dirs, indices_selecionados=None):
+def processar_relatorios(xlsx_path, modelo_path, dirs, indices_selecionados=None, imagem_padrao=None):
     """Processa e gera os relatórios em DOCX"""
     
+<<<<<<< Updated upstream
     workbook = openpyxl.load_workbook(xlsx_path)
     sheet = workbook['dados_vistoria']
     list_values = list(sheet.values)
+=======
+    try:
+        workbook = openpyxl.load_workbook(xlsx_path)
+        sheet = workbook['dados_vistoria']
+        list_values = list(sheet.values)
+        
+        relatorios_gerados = []
+        progress_bar = st.progress(0)
+        status_text = st.empty()
+        
+        # Filtrar apenas os índices selecionados
+        if indices_selecionados:
+            dados_filtrados = [list_values[0]] + [list_values[i] for i in indices_selecionados if i < len(list_values)]
+        else:
+            dados_filtrados = list_values
+        
+        total = len(dados_filtrados[1:])
+        
+        for idx, valores in enumerate(dados_filtrados[1:], 1):
+            status_text.text(f"Processando relatório {idx} de {total}: {valores[0]}")
+            progress_bar.progress(idx / total)
+            
+            doc = DocxTemplate(modelo_path)
+            
+            # Processar imagens
+            imagem1 = processar_imagem(doc, valores[12], dirs, imagem_padrao)
+            imagem2 = processar_imagem(doc, valores[13], dirs, imagem_padrao)
+            imagem3 = processar_imagem(doc, valores[14], dirs, imagem_padrao)
+            imagem4 = processar_imagem(doc, valores[16], dirs, imagem_padrao)
+            imagem5 = processar_imagem(doc, valores[18], dirs, imagem_padrao)
+            
+            # Formatar data se necessário (converter de YYYY-MM-DD para DD-MM-YYYY)
+            data_formatada = valores[2]
+            if valores[2] and isinstance(valores[2], str):
+                try:
+                    # Tentar converter de ISO format para DD-MM-YYYY
+                    from datetime import datetime
+                    if 'T' in valores[2]:  # ISO format com hora
+                        dt = datetime.fromisoformat(valores[2].replace('Z', '+00:00'))
+                    else:  # Formato YYYY-MM-DD
+                        dt = datetime.strptime(valores[2], '%Y-%m-%d')
+                    data_formatada = dt.strftime('%d-%m-%Y')
+                except:
+                    data_formatada = valores[2]  # Mantém original se falhar
+            
+            # Renderizar documento
+            doc.render({
+                'relatorio': valores[0],
+                'meta': valores[20],
+                'data': data_formatada,
+                'processo_sei': valores[5],
+                'cidade': valores[6],
+                'responsavel': valores[23],
+                'lat': valores[7],
+                'long': valores[8],
+                'observacao': valores[19],
+                'tipo_proj': valores[11],
+                'imagem_1': imagem1,
+                'imagem_2': imagem2,
+                'imagem_3': imagem3,
+                'imagem_4': imagem4,
+                'imagem_5': imagem5
+            })
+            
+            # Salvar documento DOCX
+            doc_name = os.path.join(dirs['relatorios'], f"{valores[0]}.docx")
+            doc.save(doc_name)
+            
+            relatorios_gerados.append(doc_name)
+        
+        progress_bar.empty()
+        status_text.empty()
+        
+        return relatorios_gerados
+>>>>>>> Stashed changes
     
     relatorios_gerados = []
     progress_bar = st.progress(0)
@@ -284,17 +361,21 @@ def processar_relatorios(xlsx_path, modelo_path, dirs, indices_selecionados=None
     return relatorios_gerados
 
 def processar_imagem(doc, valor_imagem, dirs):
+    """Processa uma imagem para o relatório", imagem_padrao=None):
     """Processa uma imagem para o relatório"""
     if valor_imagem is None:
-        imagem_path = 'C:/arquivos_sepe/xxx.jpg'
-        if os.path.exists(imagem_path):
-            return InlineImage(doc, imagem_path, Cm(3))
+        # Usar imagem padrão se fornecida
+        if imagem_padrao and os.path.exists(imagem_padrao):
+            return InlineImage(doc, imagem_padrao, Cm(3))
         return None
     else:
-        imagem_path = f'C:/arquivos_sepe/media/{valor_imagem}'
-        if os.path.exists(imagem_path):
-            return InlineImage(doc, imagem_path, Cm(7))
-        return None
+        # Procurar imagem nos attachments do session_state
+        if 'attachments' in st.session_state and valor_imagem in st.session_state['attachments']:
+            # Salvar temporariamente para processar
+            temp_img_path = os.path.join(dirs['media'], valor_imagem)
+            with open(temp_img_path, 'wb') as f:
+                f.write(st.session_state['attachments'][valor_imagem])
+            return InlineImage(doc, temp_img
 
 def criar_zip(arquivos, zip_path):
     """Cria um arquivo ZIP com os relatórios"""
@@ -308,21 +389,25 @@ dirs = criar_diretorios_temp()
 col1, col2 = st.columns(2)
 
 with col1:
-    st.subheader("📄 Modelo do Relatório")
-    modelo_file = st.file_uploader("Upload do modelo DOCX (formulario.docx)", type=['docx'])
-
-with col2:
-    st.subheader("📁 Diretórios de Imagens")
-    st.info("**Imagem padrão:** `C:/arquivos_sepe/xxx.jpg`")
-    st.info("**Imagens do projeto:** `C:/arquivos_sepe/media/`")
+    st.subheader("�️ Imagem Padrão (Opcional)")
+    imagem_padrao_upload = st.file_uploader(
+        "Upload da imagem padrão (quando não há foto)",
+        type=['jpg', 'jpeg', 'png'],
+        help="Esta imagem será usada quando não houver foto específica no relatório"
+    )
     
-    # Verificar se os diretórios existem
-    if os.path.exists('C:/arquivos_sepe/xxx.jpg'):
-        st.success("✅ Imagem padrão encontrada")
-    else:
-        st.warning("⚠️ Imagem padrão não encontrada")
+    imagem_padrao_path = None
+    if imagem_padrao_upload:
+        # Salvar imagem padrão temporariamente
+        imagem_padrao_path = os.path.join(dirs['default_img'], 'padrao.jpg')
+        with open(imagem_padrao_path, 'wb') as f:
+            f.write(imagem_padrao_upload.getbuffer())
+        st.success("✅ Imagem padrão carregada")
     
-    if os.path.exists('C:/arquivos_sepe/media'):
+    # Mostrar status de imagens baixadas
+    if 'attachments' in st.session_state:
+        num_imagens = len(st.session_state['attachments'])
+        st.info(f"📸 {num_imagens} imagens baixadas do ODK Central
         num_imagens = len([f for f in os.listdir('C:/arquivos_sepe/media') if f.lower().endswith(('.jpg', '.jpeg', '.png'))])
         st.success(f"✅ Diretório de imagens encontrado ({num_imagens} imagens)")
     else:
@@ -516,11 +601,7 @@ if not botao_habilitado and csv_file is not None and modelo_file is not None:
 
 if st.button("🚀 Gerar Relatórios", type="primary", use_container_width=True, disabled=not botao_habilitado):
     
-    if not csv_file:
-        st.error("❌ Por favor, faça upload do arquivo CSV!")
-    elif not modelo_file:
-        st.error("❌ Por favor, faça upload do modelo DOCX!")
-    elif not os.path.exists('C:/arquivos_sepe/xxx.jpg'):
+    ifif not os.path.exists('C:/arquivos_sepe/xxx.jpg'):
         st.error("❌ Imagem padrão não encontrada em C:/arquivos_sepe/xxx.jpg")
     elif not os.path.exists('C:/arquivos_sepe/media'):
         st.error("❌ Diretório de imagens não encontrado em C:/arquivos_sepe/media/")
@@ -540,7 +621,7 @@ if st.button("🚀 Gerar Relatórios", type="primary", use_container_width=True,
                 
                 # Processar relatórios
                 st.info("Gerando relatórios...")
-                relatorios = processar_relatorios(xlsx_path, modelo_path, dirs, indices_selecionados)
+                relatorios = processar_relatorios(xlsx_path, modelo_path, dirs, indices_selecionados, imagem_padrao_path)
                 
                 # Criar ZIP
                 zip_path = os.path.join(dirs['base'], 'relatorios.zip')
