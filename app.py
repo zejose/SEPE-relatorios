@@ -16,7 +16,7 @@ from requests.auth import HTTPBasicAuth
 
 st.set_page_config(page_title="Gerador de Relatórios SEPE", layout="wide")
 
-st.title("Gerador de Relatórios de Vistoria")
+st.title("🏗️ Gerador de Relatórios de Vistoria")
 st.markdown("---")
 
 # Adicionar tabs para escolher fonte de dados
@@ -303,7 +303,25 @@ def processar_imagem(doc, valor_imagem, dirs):
         imagem_path = 'C:/arquivos_sepe/xxx.jpg'
         if os.path.exists(imagem_path):
             return InlineImage(doc, imagem_path, Cm(3))
-        # Se não existir, retornar None (relatório sem imagem)
+        
+        # Tentar baixar imagem padrão da internet
+        try:
+            default_image_url = "https://upload.wikimedia.org/wikipedia/commons/1/14/No_Image_Available.jpg"
+            temp_image_path = os.path.join(tempfile.gettempdir(), 'no_image_available.jpg')
+            
+            # Baixar apenas se não existir no temp
+            if not os.path.exists(temp_image_path):
+                response = requests.get(default_image_url)
+                if response.status_code == 200:
+                    with open(temp_image_path, 'wb') as f:
+                        f.write(response.content)
+            
+            if os.path.exists(temp_image_path):
+                return InlineImage(doc, temp_image_path, Cm(3))
+        except:
+            pass
+        
+        # Se tudo falhar, retornar None
         return None
     else:
         # Tentar caminho local primeiro
@@ -349,9 +367,9 @@ with col2:
         
         # Verificar diretórios
         if os.path.exists('C:/arquivos_sepe/xxx.jpg'):
-            st.success("✅ Imagem padrão encontrada")
+            st.success("✅ Imagem padrão local encontrada")
         else:
-            st.warning("⚠️ Imagem padrão não encontrada")
+            st.info("ℹ️ Sem imagem local - será usado placeholder da internet")
         
         if os.path.exists('C:/arquivos_sepe/media'):
             try:
@@ -361,13 +379,14 @@ with col2:
             except:
                 st.warning("⚠️ Erro ao acessar diretório de imagens")
         else:
-            st.warning("⚠️ Diretório de imagens não encontrado")
+            st.info("ℹ️ Diretório local não encontrado - usar ODK Central")
     else:
-        # Modo Nuvem - Não mostrar avisos sobre arquivos locais
+        # Modo Nuvem
         st.info("**🌐 Modo Cloud Ativo**")
         st.success("✅ Sistema configurado para nuvem")
-        st.caption("As imagens serão baixadas automaticamente do ODK Central")
-        st.caption("Certifique-se de marcar '✓ Baixar anexos' ao conectar")
+        st.caption("• Imagem padrão: Wikipedia (sem foto)")
+        st.caption("• Imagens do projeto: Download do ODK")
+        st.caption("• Marque '✓ Baixar anexos' ao conectar ao ODK")
 
 st.markdown("---")
 
@@ -555,7 +574,7 @@ botao_habilitado = csv_file is not None and modelo_file is not None and len(indi
 if not botao_habilitado and csv_file is not None and modelo_file is not None:
     st.warning("⚠️ Nenhum relatório selecionado. Por favor, selecione ao menos um relatório.")
 
-if st.button(" Gerar Relatórios", type="primary", use_container_width=True, disabled=not botao_habilitado):
+if st.button("🚀 Gerar Relatórios", type="primary", use_container_width=True, disabled=not botao_habilitado):
     
     if not csv_file:
         st.error("❌ Por favor, faça upload do arquivo CSV ou conecte ao ODK Central!")
@@ -600,4 +619,4 @@ if st.button(" Gerar Relatórios", type="primary", use_container_width=True, dis
             st.exception(e)
 
 st.markdown("---")
-st.caption("Sistema de Geração de Relatórios de Vistoria - Versão 1.02(JC")
+st.caption("Desenvolvido para SEPE - Sistema de Geração de Relatórios de Vistoria - versão 1.03")
