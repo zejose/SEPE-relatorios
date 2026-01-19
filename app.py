@@ -600,4 +600,4 @@ if st.button("🚀 Gerar Relatórios", type="primary", use_container_width=True,
             st.exception(e)
 
 st.markdown("---")
-st.caption("Desenvolvido para SEPE - Sistema de Geração de Relatórios de Vistoria") -V 1.04
+st.caption("Desenvolvido para SEPE - Sistema de Geração de Relatórios de Vistoria -V 1.04")
