@@ -9,7 +9,6 @@ import tempfile
 import shutil
 from pathlib import Path
 import zipfile
-import pythoncom
 import sys
 import pandas as pd
 import requests
@@ -210,94 +209,79 @@ def converter_csv_para_xlsx(csv_file, xlsx_path):
 
 def processar_relatorios(xlsx_path, modelo_path, dirs, indices_selecionados=None):
     """Processa e gera os relatórios em DOCX"""
-    # Inicializar COM para evitar erros no Windows
-    try:
-        pythoncom.CoInitialize()
-        com_initialized = True
-    except:
-        com_initialized = False
     
-    try:
-        workbook = openpyxl.load_workbook(xlsx_path)
-        sheet = workbook['dados_vistoria']
-        list_values = list(sheet.values)
-        
-        relatorios_gerados = []
-        progress_bar = st.progress(0)
-        status_text = st.empty()
-        
-        # Filtrar apenas os índices selecionados
-        if indices_selecionados:
-            dados_filtrados = [list_values[0]] + [list_values[i] for i in indices_selecionados if i < len(list_values)]
-        else:
-            dados_filtrados = list_values
-        
-        total = len(dados_filtrados[1:])
-        
-        for idx, valores in enumerate(dados_filtrados[1:], 1):
-            status_text.text(f"Processando relatório {idx} de {total}: {valores[0]}")
-            progress_bar.progress(idx / total)
-            
-            doc = DocxTemplate(modelo_path)
-            
-            # Processar imagens
-            imagem1 = processar_imagem(doc, valores[12], dirs)
-            imagem2 = processar_imagem(doc, valores[13], dirs)
-            imagem3 = processar_imagem(doc, valores[14], dirs)
-            imagem4 = processar_imagem(doc, valores[16], dirs)
-            imagem5 = processar_imagem(doc, valores[18], dirs)
-            
-            # Formatar data se necessário (converter de YYYY-MM-DD para DD-MM-YYYY)
-            data_formatada = valores[2]
-            if valores[2] and isinstance(valores[2], str):
-                try:
-                    # Tentar converter de ISO format para DD-MM-YYYY
-                    from datetime import datetime
-                    if 'T' in valores[2]:  # ISO format com hora
-                        dt = datetime.fromisoformat(valores[2].replace('Z', '+00:00'))
-                    else:  # Formato YYYY-MM-DD
-                        dt = datetime.strptime(valores[2], '%Y-%m-%d')
-                    data_formatada = dt.strftime('%d-%m-%Y')
-                except:
-                    data_formatada = valores[2]  # Mantém original se falhar
-            
-            # Renderizar documento
-            doc.render({
-                'relatorio': valores[0],
-                'meta': valores[20],
-                'data': data_formatada,
-                'processo_sei': valores[5],
-                'cidade': valores[6],
-                'responsavel': valores[23],
-                'lat': valores[7],
-                'long': valores[8],
-                'observacao': valores[19],
-                'tipo_proj': valores[11],
-                'imagem_1': imagem1,
-                'imagem_2': imagem2,
-                'imagem_3': imagem3,
-                'imagem_4': imagem4,
-                'imagem_5': imagem5
-            })
-            
-            # Salvar documento DOCX
-            doc_name = os.path.join(dirs['relatorios'], f"{valores[0]}.docx")
-            doc.save(doc_name)
-            
-            relatorios_gerados.append(doc_name)
-        
-        progress_bar.empty()
-        status_text.empty()
-        
-        return relatorios_gerados
+    workbook = openpyxl.load_workbook(xlsx_path)
+    sheet = workbook['dados_vistoria']
+    list_values = list(sheet.values)
     
-    finally:
-        # Sempre finalizar COM se foi inicializado
-        if com_initialized:
+    relatorios_gerados = []
+    progress_bar = st.progress(0)
+    status_text = st.empty()
+    
+    # Filtrar apenas os índices selecionados
+    if indices_selecionados:
+        dados_filtrados = [list_values[0]] + [list_values[i] for i in indices_selecionados if i < len(list_values)]
+    else:
+        dados_filtrados = list_values
+    
+    total = len(dados_filtrados[1:])
+    
+    for idx, valores in enumerate(dados_filtrados[1:], 1):
+        status_text.text(f"Processando relatório {idx} de {total}: {valores[0]}")
+        progress_bar.progress(idx / total)
+        
+        doc = DocxTemplate(modelo_path)
+        
+        # Processar imagens
+        imagem1 = processar_imagem(doc, valores[12], dirs)
+        imagem2 = processar_imagem(doc, valores[13], dirs)
+        imagem3 = processar_imagem(doc, valores[14], dirs)
+        imagem4 = processar_imagem(doc, valores[16], dirs)
+        imagem5 = processar_imagem(doc, valores[18], dirs)
+        
+        # Formatar data se necessário (converter de YYYY-MM-DD para DD-MM-YYYY)
+        data_formatada = valores[2]
+        if valores[2] and isinstance(valores[2], str):
             try:
-                pythoncom.CoUninitialize()
+                # Tentar converter de ISO format para DD-MM-YYYY
+                from datetime import datetime
+                if 'T' in valores[2]:  # ISO format com hora
+                    dt = datetime.fromisoformat(valores[2].replace('Z', '+00:00'))
+                else:  # Formato YYYY-MM-DD
+                    dt = datetime.strptime(valores[2], '%Y-%m-%d')
+                data_formatada = dt.strftime('%d-%m-%Y')
             except:
-                pass
+                data_formatada = valores[2]  # Mantém original se falhar
+        
+        # Renderizar documento
+        doc.render({
+            'relatorio': valores[0],
+            'meta': valores[20],
+            'data': data_formatada,
+            'processo_sei': valores[5],
+            'cidade': valores[6],
+            'responsavel': valores[23],
+            'lat': valores[7],
+            'long': valores[8],
+            'observacao': valores[19],
+            'tipo_proj': valores[11],
+            'imagem_1': imagem1,
+            'imagem_2': imagem2,
+            'imagem_3': imagem3,
+            'imagem_4': imagem4,
+            'imagem_5': imagem5
+        })
+        
+        # Salvar documento DOCX
+        doc_name = os.path.join(dirs['relatorios'], f"{valores[0]}.docx")
+        doc.save(doc_name)
+        
+        relatorios_gerados.append(doc_name)
+    
+    progress_bar.empty()
+    status_text.empty()
+    
+    return relatorios_gerados
 
 def processar_imagem(doc, valor_imagem, dirs):
     """Processa uma imagem para o relatório"""
