@@ -16,7 +16,7 @@ from requests.auth import HTTPBasicAuth
 
 st.set_page_config(page_title="Gerador de Relatórios SEPE", layout="wide")
 
-st.title("🏗️ Gerador de Relatórios de Vistoria")
+st.title("Gerador de Relatórios de Vistoria")
 st.markdown("---")
 
 # Adicionar tabs para escolher fonte de dados
@@ -555,7 +555,7 @@ botao_habilitado = csv_file is not None and modelo_file is not None and len(indi
 if not botao_habilitado and csv_file is not None and modelo_file is not None:
     st.warning("⚠️ Nenhum relatório selecionado. Por favor, selecione ao menos um relatório.")
 
-if st.button("🚀 Gerar Relatórios", type="primary", use_container_width=True, disabled=not botao_habilitado):
+if st.button(" Gerar Relatórios", type="primary", use_container_width=True, disabled=not botao_habilitado):
     
     if not csv_file:
         st.error("❌ Por favor, faça upload do arquivo CSV ou conecte ao ODK Central!")
@@ -600,4 +600,4 @@ if st.button("🚀 Gerar Relatórios", type="primary", use_container_width=True,
             st.exception(e)
 
 st.markdown("---")
-st.caption("Desenvolvido para SEPE - Sistema de Geração de Relatórios de Vistoria")
+st.caption("Sistema de Geração de Relatórios de Vistoria (JC")
