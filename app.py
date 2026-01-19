@@ -335,30 +335,39 @@ with col1:
     modelo_file = st.file_uploader("Upload do modelo DOCX (formulario.docx)", type=['docx'])
 
 with col2:
-    st.subheader("📁 Diretórios de Imagens")
+    st.subheader("📁 Configuração de Imagens")
     
     # Verificar se está rodando localmente (Windows) ou na nuvem
-    is_local = os.path.exists('C:/arquivos_sepe') or os.name == 'nt'
+    is_windows = os.name == 'nt'
+    local_dir_exists = os.path.exists('C:/arquivos_sepe')
     
-    if is_local:
-        st.info("**Imagem padrão:** `C:/arquivos_sepe/xxx.jpg`")
-        st.info("**Imagens do projeto:** `C:/arquivos_sepe/media/`")
+    if is_windows and local_dir_exists:
+        # Modo Local - Mostrar status dos diretórios
+        st.info("**📂 Modo Local Detectado**")
+        st.caption("Imagem padrão: `C:/arquivos_sepe/xxx.jpg`")
+        st.caption("Imagens do projeto: `C:/arquivos_sepe/media/`")
         
-        # Verificar se os diretórios existem
+        # Verificar diretórios
         if os.path.exists('C:/arquivos_sepe/xxx.jpg'):
             st.success("✅ Imagem padrão encontrada")
         else:
             st.warning("⚠️ Imagem padrão não encontrada")
         
         if os.path.exists('C:/arquivos_sepe/media'):
-            num_imagens = len([f for f in os.listdir('C:/arquivos_sepe/media') if f.lower().endswith(('.jpg', '.jpeg', '.png'))])
-            st.success(f"✅ Diretório de imagens encontrado ({num_imagens} imagens)")
+            try:
+                num_imagens = len([f for f in os.listdir('C:/arquivos_sepe/media') 
+                                   if f.lower().endswith(('.jpg', '.jpeg', '.png'))])
+                st.success(f"✅ Diretório de imagens ({num_imagens} imagens)")
+            except:
+                st.warning("⚠️ Erro ao acessar diretório de imagens")
         else:
             st.warning("⚠️ Diretório de imagens não encontrado")
     else:
-        st.info("**🌐 Modo Nuvem Ativo**")
-        st.success("✅ As imagens serão baixadas automaticamente do ODK Central")
-        st.caption("Certifique-se de marcar 'Baixar anexos' ao conectar ao ODK")
+        # Modo Nuvem - Não mostrar avisos sobre arquivos locais
+        st.info("**🌐 Modo Cloud Ativo**")
+        st.success("✅ Sistema configurado para nuvem")
+        st.caption("As imagens serão baixadas automaticamente do ODK Central")
+        st.caption("Certifique-se de marcar '✓ Baixar anexos' ao conectar")
 
 st.markdown("---")
 
