@@ -2,7 +2,5 @@ streamlit
 openpyxl
 python-docx
 docxtpl
-docx2pdf
 pandas
-pywin32
 requests
