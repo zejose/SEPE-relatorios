@@ -600,4 +600,4 @@ if st.button(" Gerar Relatórios", type="primary", use_container_width=True, dis
             st.exception(e)
 
 st.markdown("---")
-st.caption("Sistema de Geração de Relatórios de Vistoria (JC")
+st.caption("Sistema de Geração de Relatórios de Vistoria - Versão 1.02(JC")
