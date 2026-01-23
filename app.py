@@ -94,9 +94,13 @@ with tab1:
                         csv_filename = [f for f in zip_file.namelist() if f.endswith('.csv')][0]
                         csv_content = zip_file.read(csv_filename).decode('utf-8')
                     
-                    # Salvar em session_state
+                    # Salvar em session_state para poder baixar depois
                     st.session_state['csv_data'] = csv_content
                     st.session_state['data_source'] = 'odk'
+                    st.session_state['odk_credentials'] = {
+                        'base_url': base_url,
+                        'auth': auth
+                    }
                     
                     # Contar registros
                     num_linhas = len(csv_content.split('\n')) - 1  # -1 para excluir header
@@ -127,6 +131,7 @@ with tab1:
                             submissions_data = submissions_response.json()
                             
                             total_anexos = 0
+                            anexos_baixados = []
                             
                             # Para cada submission, baixar seus anexos
                             for submission in submissions_data:
@@ -153,19 +158,33 @@ with tab1:
                                                     file_path_local = os.path.join(local_media_dir, att_name)
                                                     with open(file_path_local, 'wb') as f:
                                                         f.write(file_response.content)
-                                                except:
-                                                    pass
+                                                except Exception as e:
+                                                    st.warning(f"Erro ao salvar {att_name} localmente: {e}")
                                             
                                             # Sempre salvar no temporário
                                             file_path_temp = os.path.join(temp_media_dir, att_name)
                                             with open(file_path_temp, 'wb') as f:
                                                 f.write(file_response.content)
                                             
+                                            anexos_baixados.append({
+                                                'nome': att_name,
+                                                'path_temp': file_path_temp,
+                                                'data': file_response.content
+                                            })
+                                            
                                             total_anexos += 1
+                            
+                            # Salvar lista de anexos no session_state
+                            st.session_state['anexos_baixados'] = anexos_baixados
                             
                             # Mensagem de sucesso adequada
                             if local_media_dir and os.path.exists(local_media_dir):
-                                st.success(f"✅ {total_anexos} anexos baixados para C:/arquivos_sepe/media/")
+                                # Verificar se realmente salvou
+                                arquivos_salvos = os.listdir(local_media_dir) if os.path.exists(local_media_dir) else []
+                                if len(arquivos_salvos) > 0:
+                                    st.success(f"✅ {total_anexos} anexos baixados para C:/arquivos_sepe/media/")
+                                else:
+                                    st.warning(f"⚠️ {total_anexos} anexos baixados, mas não foi possível salvar em C:/arquivos_sepe/media/")
                             else:
                                 st.success(f"✅ {total_anexos} anexos baixados")
                         except Exception as e:
@@ -198,6 +217,41 @@ if 'csv_data' in st.session_state:
     
     fonte = "ODK Central" if st.session_state.get('data_source') == 'odk' else "Upload Manual"
     st.info(f"📊 Dados carregados de: **{fonte}**")
+    
+    # Botão para baixar imagens em ZIP (se houver anexos baixados)
+    if 'anexos_baixados' in st.session_state and len(st.session_state['anexos_baixados']) > 0:
+        st.subheader("📥 Download de Imagens")
+        
+        col_img1, col_img2 = st.columns(2)
+        
+        with col_img1:
+            st.info(f"**{len(st.session_state['anexos_baixados'])} imagens** disponíveis para download")
+        
+        with col_img2:
+            # Criar ZIP com todas as imagens
+            if st.button("📦 Baixar Todas as Imagens (ZIP)", use_container_width=True):
+                try:
+                    # Criar ZIP em memória
+                    zip_buffer = BytesIO()
+                    with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zip_file:
+                        for anexo in st.session_state['anexos_baixados']:
+                            zip_file.writestr(anexo['nome'], anexo['data'])
+                    
+                    zip_buffer.seek(0)
+                    
+                    st.download_button(
+                        label="⬇️ Download ZIP com Imagens",
+                        data=zip_buffer,
+                        file_name="imagens_odk.zip",
+                        mime="application/zip",
+                        use_container_width=True
+                    )
+                    
+                    st.success("✅ ZIP criado com sucesso! Clique no botão acima para baixar.")
+                except Exception as e:
+                    st.error(f"❌ Erro ao criar ZIP: {str(e)}")
+        
+        st.markdown("---")
 
 # Criar diretórios temporários
 @st.cache_resource
