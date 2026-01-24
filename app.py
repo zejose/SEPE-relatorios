@@ -535,6 +535,11 @@ if csv_file is not None:
                 elif len(header) > 1:
                     colunas_display.append(header[1])
                 
+                # Procurar coluna Tipo de Relatório
+                tipo_relat_cols = [col for col in header if 'Tipo_Relat' in col or 'Tipo_Relatorio' in col]
+                if tipo_relat_cols:
+                    colunas_display.append(tipo_relat_cols[0])
+                
                 # Adicionar SubmissionDate (procurar sem sufixo _dup)
                 submission_cols = [col for col in header if 'SubmissionDate' in col]
                 if submission_cols:
@@ -601,6 +606,11 @@ if csv_file is not None:
                     colunas_display.append(id_proj_cols[0])
                 elif len(header) > 1:
                     colunas_display.append(header[1])
+                
+                # Procurar coluna Tipo de Relatório
+                tipo_relat_cols = [col for col in header if 'Tipo_Relat' in col or 'Tipo_Relatorio' in col]
+                if tipo_relat_cols:
+                    colunas_display.append(tipo_relat_cols[0])
                 
                 # Adicionar SubmissionDate (procurar sem sufixo _dup)
                 submission_cols = [col for col in header if 'SubmissionDate' in col]
