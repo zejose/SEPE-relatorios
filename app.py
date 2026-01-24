@@ -336,7 +336,7 @@ def processar_relatorios(xlsx_path, modelo_path, dirs, indices_selecionados=None
         # Renderizar documento
         doc.render({
             'relatorio': valores[0],
-            'id_proj':valores[4],
+            'id_proj': valores[4],
             'meta': valores[22],
             'data': data_formatada,
             'processo_sei': valores[5],
@@ -527,7 +527,12 @@ if csv_file is not None:
             if selecao_tipo == "Selecionar específicos":
                 # Mostrar colunas importantes para seleção
                 colunas_display = ['#']
-                if len(header) > 1:
+                
+                # Procurar coluna ID do Projeto
+                id_proj_cols = [col for col in header if 'N_mero_ID' in col or 'Numero_ID' in col or 'details-N' in col]
+                if id_proj_cols:
+                    colunas_display.append(id_proj_cols[0])
+                elif len(header) > 1:
                     colunas_display.append(header[1])
                 
                 # Adicionar SubmissionDate (procurar sem sufixo _dup)
@@ -537,9 +542,17 @@ if csv_file is not None:
                 elif len(header) > 3:
                     colunas_display.append(header[3])
                 
-                if len(header) > 7:
+                # Adicionar outras colunas importantes
+                cidade_cols = [col for col in header if 'cidade' in col.lower() or 'regiao' in col.lower()]
+                if cidade_cols:
+                    colunas_display.append(cidade_cols[0])
+                elif len(header) > 7:
                     colunas_display.append(header[7])
-                if len(header) > 6:
+                
+                processo_cols = [col for col in header if 'processo' in col.lower() or 'sei' in col.lower()]
+                if processo_cols:
+                    colunas_display.append(processo_cols[0])
+                elif len(header) > 6:
                     colunas_display.append(header[6])
                 
                 # REMOVER DUPLICATAS da lista de colunas_display
@@ -581,7 +594,12 @@ if csv_file is not None:
             else:
                 # Mostrar TODOS os dados
                 colunas_display = ['#']
-                if len(header) > 1:
+                
+                # Procurar coluna ID do Projeto
+                id_proj_cols = [col for col in header if 'N_mero_ID' in col or 'Numero_ID' in col or 'details-N' in col]
+                if id_proj_cols:
+                    colunas_display.append(id_proj_cols[0])
+                elif len(header) > 1:
                     colunas_display.append(header[1])
                 
                 # Adicionar SubmissionDate (procurar sem sufixo _dup)
@@ -591,11 +609,23 @@ if csv_file is not None:
                 elif len(header) > 3:
                     colunas_display.append(header[3])
                 
-                if len(header) > 7:
+                # Adicionar outras colunas importantes
+                cidade_cols = [col for col in header if 'cidade' in col.lower() or 'regiao' in col.lower()]
+                if cidade_cols:
+                    colunas_display.append(cidade_cols[0])
+                elif len(header) > 7:
                     colunas_display.append(header[7])
-                if len(header) > 6:
+                
+                processo_cols = [col for col in header if 'processo' in col.lower() or 'sei' in col.lower()]
+                if processo_cols:
+                    colunas_display.append(processo_cols[0])
+                elif len(header) > 6:
                     colunas_display.append(header[6])
-                if len(header) > 12:
+                
+                tipo_proj_cols = [col for col in header if 'tipo' in col.lower() and 'proj' in col.lower()]
+                if tipo_proj_cols:
+                    colunas_display.append(tipo_proj_cols[0])
+                elif len(header) > 12:
                     colunas_display.append(header[12])
                 
                 # REMOVER DUPLICATAS da lista de colunas_display
