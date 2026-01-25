@@ -330,11 +330,11 @@ def processar_relatorios(xlsx_path, modelo_path, dirs, indices_selecionados=None
         doc = DocxTemplate(modelo_path)
         
         # Processar imagens
-        imagem1 = processar_imagem(doc, valores[17], dirs)
-        imagem2 = processar_imagem(doc, valores[18], dirs)
-        imagem3 = processar_imagem(doc, valores[19], dirs)
-        imagem4 = processar_imagem(doc, valores[20], dirs)
-        imagem5 = processar_imagem(doc, valores[21], dirs)
+        imagem1 = processar_imagem(doc, valores[16], dirs)
+        imagem2 = processar_imagem(doc, valores[17], dirs)
+        imagem3 = processar_imagem(doc, valores[18], dirs)
+        imagem4 = processar_imagem(doc, valores[19], dirs)
+        imagem5 = processar_imagem(doc, valores[20], dirs)
         
         # Formatar data se necessário (converter de YYYY-MM-DD para DD-MM-YYYY)
         data_formatada = valores[2]
@@ -353,17 +353,16 @@ def processar_relatorios(xlsx_path, modelo_path, dirs, indices_selecionados=None
         # Renderizar documento
         doc.render({
             'relatorio': valores[0],
-            'id_proj': valores[5],
-            'meta': valores[23],
+            'id_proj': valores[4],
+            'meta': valores[22],
             'data': data_formatada,
-            'processo_sei': valores[6],
-            'cidade': valores[11],
-            'tipo_rel': valores[7],
-            'responsavel': valores[26],
-            'lat': valores[12],
-            'long': valores[13],
-            'observacao': valores[22],
-            'tipo_proj': valores[16],
+            'processo_sei': valores[5],
+            'cidade': valores[10],
+            'responsavel': valores[25],
+            'lat': valores[11],
+            'long': valores[12],
+            'observacao': valores[21],
+            'tipo_proj': valores[15],
             'imagem_1': imagem1,
             'imagem_2': imagem2,
             'imagem_3': imagem3,
@@ -384,7 +383,7 @@ def processar_relatorios(xlsx_path, modelo_path, dirs, indices_selecionados=None
 
 def processar_imagem(doc, valor_imagem, dirs):
     """Processa uma imagem para o relatório"""
-    if valor_imagem is None:
+    if valor_imagem is None or valor_imagem == '':
         # Tentar caminho local primeiro (Windows)
         imagem_path = 'C:/arquivos_sepe/xxx.jpg'
         if os.path.exists(imagem_path):
@@ -410,10 +409,24 @@ def processar_imagem(doc, valor_imagem, dirs):
         # Se tudo falhar, retornar None
         return None
     else:
-        imagem_path = f'C:/arquivos_sepe/media/{valor_imagem}'
-        if os.path.exists(imagem_path):
-            return InlineImage(doc, imagem_path, Cm(7))
-        return None
+        # Tentar vários caminhos para encontrar a imagem
+        caminhos_possiveis = [
+            f'C:/arquivos_sepe/media/{valor_imagem}',  # Caminho local
+            os.path.join(tempfile.gettempdir(), 'odk_media', valor_imagem),  # Caminho temporário
+            os.path.join(dirs.get('media', ''), valor_imagem)  # Diretório temporário dos relatórios
+        ]
+        
+        for imagem_path in caminhos_possiveis:
+            if os.path.exists(imagem_path):
+                try:
+                    return InlineImage(doc, imagem_path, Cm(7))
+                except Exception as e:
+                    print(f"Erro ao processar imagem {imagem_path}: {e}")
+                    continue
+        
+        # Se não encontrar a imagem, usar imagem padrão
+        print(f"Imagem não encontrada: {valor_imagem}")
+        return processar_imagem(doc, None, dirs)
 
 def criar_zip(arquivos, zip_path):
     """Cria um arquivo ZIP com os relatórios"""
