@@ -358,7 +358,7 @@ def processar_relatorios(xlsx_path, modelo_path, dirs, indices_selecionados=None
             'data': data_formatada,
             'processo_sei': valores[5],
             'cidade': valores[10],
-            'tipo_rel': valores[6]
+            'tipo_rel': valores[6],
             'responsavel': valores[25],
             'lat': valores[11],
             'long': valores[12],
