@@ -354,6 +354,7 @@ def processar_relatorios(xlsx_path, modelo_path, dirs, indices_selecionados=None
         doc.render({
             'relatorio': valores[0],
             'id_proj': valores[5],
+            'id_tipo_rel': valores[7],
             'meta': valores[23],
             'data': data_formatada,
             'processo_sei': valores[6],
