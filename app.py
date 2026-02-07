@@ -160,12 +160,9 @@ with tab1:
                                         file_response = requests.get(att_download_url, auth=auth)
                                         
                                         if file_response.status_code == 200:
-                                            # Criar novo nome com ID do projeto
-                                            extensao = os.path.splitext(att_name)[1]
-                                            if id_projeto:
-                                                novo_nome = f"id{id_projeto}_{att_name}"
-                                            else:
-                                                novo_nome = att_name
+                                            # Criar novo nome com sufixo "_foto"
+                                            nome_sem_extensao, extensao = os.path.splitext(att_name)
+                                            novo_nome = f"{nome_sem_extensao}_foto{extensao}"
                                             
                                             # Salvar em C:/ se possível (com nome original)
                                             if local_media_dir:
@@ -183,7 +180,7 @@ with tab1:
                                             
                                             anexos_baixados.append({
                                                 'nome_original': att_name,
-                                                'nome_com_id': novo_nome,
+                                                'nome_com_sufixo': novo_nome,
                                                 'path_temp': file_path_temp,
                                                 'data': file_response.content
                                             })
@@ -251,20 +248,20 @@ if 'csv_data' in st.session_state:
                     zip_buffer = BytesIO()
                     with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zip_file:
                         for anexo in st.session_state['anexos_baixados']:
-                            # Usar o nome com ID do projeto
-                            zip_file.writestr(anexo['nome_com_id'], anexo['data'])
+                            # Usar o nome com sufixo "_foto"
+                            zip_file.writestr(anexo['nome_com_sufixo'], anexo['data'])
                     
                     zip_buffer.seek(0)
                     
                     st.download_button(
                         label="⬇️ Download ZIP com Imagens Renomeadas",
                         data=zip_buffer,
-                        file_name="imagens_odk_com_id.zip",
+                        file_name="imagens_odk_com_sufixo_foto.zip",
                         mime="application/zip",
                         use_container_width=True
                     )
                     
-                    st.success("✅ ZIP criado com sucesso! As imagens foram renomeadas com 'idXXXX_' no início.")
+                    st.success("✅ ZIP criado com sucesso! As imagens foram renomeadas com sufixo '_foto'.")
                 except Exception as e:
                     st.error(f"❌ Erro ao criar ZIP: {str(e)}")
         
