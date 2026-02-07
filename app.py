@@ -124,31 +124,63 @@ with tab1:
                         os.makedirs(temp_media_dir, exist_ok=True)
                         
                         try:
-                            # Primeiro, vamos criar um mapa de instanceId para ID do projeto usando o CSV
-                            st.info("🔍 Mapeando IDs do projeto a partir do CSV...")
+                            # Primeiro, vamos ver quais colunas existem no CSV
+                            st.info("🔍 Analisando estrutura do CSV...")
                             
-                            # Parsear o CSV para criar o mapeamento
+                            # Parsear o CSV para ver as colunas
                             import io
+                            csv_lines = csv_content.split('\n')
+                            csv_reader_header = csv.reader([csv_lines[0]])
+                            header_cols = next(csv_reader_header)
+                            
+                            # Mostrar todas as colunas
+                            st.info(f"📋 Total de colunas no CSV: {len(header_cols)}")
+                            
+                            # Filtrar colunas que podem conter ID
+                            id_cols = [col for col in header_cols if 'id' in col.lower() or 'ID' in col or 'mero' in col]
+                            st.json({
+                                'colunas_com_ID': id_cols,
+                                'primeiras_10_colunas': header_cols[:10]
+                            })
+                            
+                            # Agora criar o mapa
+                            st.info("🔍 Criando mapeamento instanceId -> ID do projeto...")
+                            
                             csv_reader = csv.DictReader(io.StringIO(csv_content))
                             
                             # Mapa: instanceId -> ID do projeto
                             id_map = {}
-                            for row in csv_reader:
+                            primeira_linha = None
+                            
+                            for idx, row in enumerate(csv_reader):
+                                # Guardar primeira linha para debug
+                                if idx == 0:
+                                    primeira_linha = row
+                                
+                                # Buscar instanceId
                                 instance_id = row.get('KEY') or row.get('InstanceID') or row.get('meta-instanceID')
                                 
-                                # Buscar ID do projeto em várias colunas possíveis
-                                id_projeto = (row.get('details-N_mero_ID') or 
-                                            row.get('details-Numero_ID') or 
-                                            row.get('N_mero_ID') or 
-                                            row.get('Numero_ID') or
-                                            row.get('details-numero_id') or
-                                            row.get('numero_id'))
+                                # Buscar ID do projeto testando TODAS as colunas que contêm "id"
+                                id_projeto = None
+                                for col in id_cols:
+                                    if row.get(col) and row.get(col).strip():
+                                        # Verificar se parece ser um ID numérico ou alfanumérico curto
+                                        valor = row.get(col).strip()
+                                        if len(valor) < 20 and valor not in ['uuid:', 'meta', 'details']:
+                                            id_projeto = valor
+                                            break
                                 
                                 if instance_id and id_projeto:
                                     # Remover o prefixo 'uuid:' se existir
                                     if instance_id.startswith('uuid:'):
                                         instance_id = instance_id[5:]
                                     id_map[instance_id] = id_projeto
+                            
+                            # Mostrar debug da primeira linha
+                            if primeira_linha:
+                                st.info("🔍 Valores da primeira linha do CSV:")
+                                sample_data = {k: v[:50] if v else 'VAZIO' for k, v in list(primeira_linha.items())[:15]}
+                                st.json(sample_data)
                             
                             st.info(f"✓ Mapeados {len(id_map)} registros com ID do projeto")
                             
@@ -157,8 +189,10 @@ with tab1:
                                 sample = list(id_map.items())[:3]
                                 st.json({
                                     'total_mapeado': len(id_map),
-                                    'exemplos': {k[:20]+'...': v for k, v in sample}
+                                    'exemplos_mapeamento': {k[:20]+'...': v for k, v in sample}
                                 })
+                            else:
+                                st.error("❌ NENHUM registro foi mapeado! O campo de ID do projeto não foi encontrado.")
                             
                             # Buscar lista de submissions para pegar os IDs
                             submissions_url = f"{base_url}/submissions"
@@ -176,9 +210,9 @@ with tab1:
                                 # Buscar o ID do projeto no mapa criado a partir do CSV
                                 id_projeto = id_map.get(instance_id)
                                 
-                                # DEBUG na primeira iteração
-                                if idx == 0:
-                                    st.info(f"🔍 Primeira submission: instanceId={instance_id[:30]}... | ID Projeto={id_projeto}")
+                                # DEBUG nas primeiras 3 iterações
+                                if idx < 3:
+                                    st.info(f"🔍 Submission {idx+1}: instanceId={instance_id[:30] if instance_id else 'None'}... | ID Projeto={'✓ '+id_projeto if id_projeto else '❌ NÃO ENCONTRADO'}")
                                 
                                 # Buscar anexos desta submission
                                 attachments_url = f"{base_url}/submissions/{instance_id}/attachments"
@@ -200,6 +234,10 @@ with tab1:
                                                 novo_nome = f"foto_{id_projeto}_{att_name}"
                                             else:
                                                 novo_nome = f"foto_{att_name}"
+                                            
+                                            # DEBUG: Mostrar renomeação das primeiras 3 fotos
+                                            if total_anexos < 3:
+                                                st.success(f"📸 Foto renomeada: {att_name} → {novo_nome}")
                                             
                                             # Salvar em C:/ se possível (com nome original)
                                             if local_media_dir:
