@@ -124,28 +124,16 @@ with tab1:
                         os.makedirs(temp_media_dir, exist_ok=True)
                         
                         try:
-                            # Primeiro, vamos ver quais colunas existem no CSV
-                            st.info("🔍 Analisando estrutura do CSV...")
-                            
-                            # Parsear o CSV para ver as colunas
+                            # Parsear o CSV para criar o mapeamento
                             import io
                             csv_lines = csv_content.split('\n')
                             csv_reader_header = csv.reader([csv_lines[0]])
                             header_cols = next(csv_reader_header)
                             
-                            # Mostrar todas as colunas
-                            st.info(f"📋 Total de colunas no CSV: {len(header_cols)}")
-                            
                             # Filtrar colunas que podem conter ID
                             id_cols = [col for col in header_cols if 'id' in col.lower() or 'ID' in col or 'mero' in col]
-                            st.json({
-                                'colunas_com_ID': id_cols,
-                                'primeiras_10_colunas': header_cols[:10]
-                            })
                             
-                            # Agora criar o mapa
-                            st.info("🔍 Criando mapeamento instanceId -> ID do projeto...")
-                            
+                            # Criar o mapa
                             csv_reader = csv.DictReader(io.StringIO(csv_content))
                             
                             # Mapa: instanceId -> ID do projeto
@@ -195,37 +183,10 @@ with tab1:
                                     # Adicionar todas as variações ao mapa
                                     for iid in instance_ids:
                                         id_map[iid] = id_projeto
-                                    
-                                    # DEBUG: Mostrar primeiros 3 mapeamentos
-                                    if len(id_map) <= 9:  # 3 registros x 3 variações = 9
-                                        st.success(f"✓ Mapeado ID={id_projeto} para instanceId={instance_ids[0][:30]}...")
                             
-                            # Mostrar debug da primeira linha
-                            if primeira_linha:
-                                st.info("🔍 Valores da primeira linha do CSV:")
-                                
-                                # Mostrar especificamente a coluna índice 4
-                                row_values = list(primeira_linha.values())
-                                row_keys = list(primeira_linha.keys())
-                                
-                                st.json({
-                                    'coluna_indice_4_nome': row_keys[4] if len(row_keys) > 4 else 'NÃO EXISTE',
-                                    'coluna_indice_4_valor': row_values[4] if len(row_values) > 4 else 'NÃO EXISTE',
-                                    'campo_details-N_mero_ID': primeira_linha.get('details-N_mero_ID', 'NÃO ENCONTRADO'),
-                                    'todas_colunas_com_valores': {k: v[:50] if v else 'VAZIO' for k, v in list(primeira_linha.items())[:10]}
-                                })
-                            
-                            st.info(f"✓ Mapeados {len(id_map)} registros com ID do projeto")
-                            
-                            # DEBUG: Mostrar alguns exemplos do mapeamento
-                            if id_map:
-                                sample = list(id_map.items())[:3]
-                                st.json({
-                                    'total_mapeado': len(id_map),
-                                    'exemplos_mapeamento': {k[:20]+'...': v for k, v in sample}
-                                })
-                            else:
-                                st.error("❌ NENHUM registro foi mapeado! O campo de ID do projeto não foi encontrado.")
+                            # Mensagem de resumo
+                            num_registros = len(set(id_map.values()))  # Contar IDs únicos
+                            st.success(f"✅ {num_registros} registros mapeados com ID do projeto")
                             
                             # Buscar lista de submissions para pegar os IDs
                             submissions_url = f"{base_url}/submissions"
@@ -242,16 +203,6 @@ with tab1:
                                 
                                 # Buscar o ID do projeto no mapa criado a partir do CSV
                                 id_projeto = id_map.get(instance_id)
-                                
-                                # DEBUG nas primeiras 3 iterações
-                                if idx < 3:
-                                    st.info(f"🔍 Submission {idx+1}:")
-                                    st.json({
-                                        'instanceId_da_API': instance_id[:50] if instance_id else 'None',
-                                        'ID_encontrado_no_mapa': id_projeto if id_projeto else '❌ NÃO ENCONTRADO',
-                                        'total_chaves_no_mapa': len(id_map),
-                                        'primeiras_3_chaves_mapa': list(id_map.keys())[:3] if id_map else []
-                                    })
                                 
                                 # Buscar anexos desta submission
                                 attachments_url = f"{base_url}/submissions/{instance_id}/attachments"
@@ -273,10 +224,6 @@ with tab1:
                                                 novo_nome = f"foto_{id_projeto}_{att_name}"
                                             else:
                                                 novo_nome = f"foto_{att_name}"
-                                            
-                                            # DEBUG: Mostrar renomeação das primeiras 3 fotos
-                                            if total_anexos < 3:
-                                                st.success(f"📸 Foto renomeada: {att_name} → {novo_nome}")
                                             
                                             # Salvar em C:/ se possível (com nome original)
                                             if local_media_dir:
@@ -854,4 +801,4 @@ if st.button("🚀 Gerar Relatórios", type="primary", use_container_width=True,
             st.exception(e)
 
 st.markdown("---")
-st.caption("Desenvolvido para SEPE - Sistema de Geração de Relatórios de Vistoria")
+st.caption("Desenvolvido para SEPE - Sistema de Geração de Relatórios de Vistoria - versão 1.1")
