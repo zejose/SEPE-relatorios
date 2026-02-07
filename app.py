@@ -124,6 +124,42 @@ with tab1:
                         os.makedirs(temp_media_dir, exist_ok=True)
                         
                         try:
+                            # Primeiro, vamos criar um mapa de instanceId para ID do projeto usando o CSV
+                            st.info("🔍 Mapeando IDs do projeto a partir do CSV...")
+                            
+                            # Parsear o CSV para criar o mapeamento
+                            import io
+                            csv_reader = csv.DictReader(io.StringIO(csv_content))
+                            
+                            # Mapa: instanceId -> ID do projeto
+                            id_map = {}
+                            for row in csv_reader:
+                                instance_id = row.get('KEY') or row.get('InstanceID') or row.get('meta-instanceID')
+                                
+                                # Buscar ID do projeto em várias colunas possíveis
+                                id_projeto = (row.get('details-N_mero_ID') or 
+                                            row.get('details-Numero_ID') or 
+                                            row.get('N_mero_ID') or 
+                                            row.get('Numero_ID') or
+                                            row.get('details-numero_id') or
+                                            row.get('numero_id'))
+                                
+                                if instance_id and id_projeto:
+                                    # Remover o prefixo 'uuid:' se existir
+                                    if instance_id.startswith('uuid:'):
+                                        instance_id = instance_id[5:]
+                                    id_map[instance_id] = id_projeto
+                            
+                            st.info(f"✓ Mapeados {len(id_map)} registros com ID do projeto")
+                            
+                            # DEBUG: Mostrar alguns exemplos do mapeamento
+                            if id_map:
+                                sample = list(id_map.items())[:3]
+                                st.json({
+                                    'total_mapeado': len(id_map),
+                                    'exemplos': {k[:20]+'...': v for k, v in sample}
+                                })
+                            
                             # Buscar lista de submissions para pegar os IDs
                             submissions_url = f"{base_url}/submissions"
                             submissions_response = requests.get(submissions_url, auth=auth)
@@ -137,40 +173,12 @@ with tab1:
                             for idx, submission in enumerate(submissions_data):
                                 instance_id = submission.get('instanceId')
                                 
-                                # DEBUG: Mostrar estrutura na primeira submission
+                                # Buscar o ID do projeto no mapa criado a partir do CSV
+                                id_projeto = id_map.get(instance_id)
+                                
+                                # DEBUG na primeira iteração
                                 if idx == 0:
-                                    st.info(f"🔍 Estrutura da primeira submission:")
-                                    st.json({
-                                        'keys': list(submission.keys()),
-                                        'instanceId': instance_id[:20] + '...' if instance_id else None,
-                                        'has_details': 'details' in submission,
-                                        'sample_fields': {k: str(v)[:50] for k, v in list(submission.items())[:5]}
-                                    })
-                                
-                                
-                                # Buscar o ID do projeto (details-N_mero_ID) desta submission
-                                # Procurar no campo correto do JSON
-                                id_projeto = None
-                                
-                                # Tentar múltiplas variações do campo
-                                if 'details' in submission and isinstance(submission['details'], dict):
-                                    id_projeto = submission['details'].get('N_mero_ID') or \
-                                                submission['details'].get('Numero_ID') or \
-                                                submission['details'].get('numero_id') or \
-                                                submission['details'].get('id')
-                                
-                                # Tentar nos campos diretos da submission
-                                if not id_projeto:
-                                    id_projeto = submission.get('details-N_mero_ID') or \
-                                                submission.get('details-Numero_ID') or \
-                                                submission.get('N_mero_ID') or \
-                                                submission.get('Numero_ID')
-                                
-                                # DEBUG: Mostrar aviso se não encontrar ID
-                                if not id_projeto:
-                                    st.warning(f"⚠️ ID do projeto não encontrado para submission {instance_id[:8]}...")
-                                else:
-                                    st.info(f"✓ ID encontrado: {id_projeto} para submission {instance_id[:8]}...")
+                                    st.info(f"🔍 Primeira submission: instanceId={instance_id[:30]}... | ID Projeto={id_projeto}")
                                 
                                 # Buscar anexos desta submission
                                 attachments_url = f"{base_url}/submissions/{instance_id}/attachments"
