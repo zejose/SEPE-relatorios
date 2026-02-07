@@ -160,27 +160,44 @@ with tab1:
                                 # Buscar instanceId
                                 instance_id = row.get('KEY') or row.get('InstanceID') or row.get('meta-instanceID')
                                 
-                                # Buscar ID do projeto testando TODAS as colunas que contêm "id"
-                                id_projeto = None
-                                for col in id_cols:
-                                    if row.get(col) and row.get(col).strip():
-                                        # Verificar se parece ser um ID numérico ou alfanumérico curto
-                                        valor = row.get(col).strip()
-                                        if len(valor) < 20 and valor not in ['uuid:', 'meta', 'details']:
-                                            id_projeto = valor
-                                            break
+                                # PRIORIDADE 1: Buscar especificamente "details-N_mero_ID"
+                                id_projeto = row.get('details-N_mero_ID')
+                                
+                                # PRIORIDADE 2: Se não encontrou, tentar pela coluna de índice 4
+                                if not id_projeto or not str(id_projeto).strip():
+                                    # Converter row dict para lista e pegar índice 4
+                                    row_values = list(row.values())
+                                    if len(row_values) > 4:
+                                        id_projeto = row_values[4]
+                                
+                                # Limpar o valor
+                                if id_projeto:
+                                    id_projeto = str(id_projeto).strip()
                                 
                                 if instance_id and id_projeto:
                                     # Remover o prefixo 'uuid:' se existir
                                     if instance_id.startswith('uuid:'):
                                         instance_id = instance_id[5:]
                                     id_map[instance_id] = id_projeto
+                                    
+                                    # DEBUG: Mostrar primeiros 3 mapeamentos
+                                    if len(id_map) <= 3:
+                                        st.success(f"✓ Mapeamento {len(id_map)}: instanceId={instance_id[:30]}... → ID={id_projeto}")
                             
                             # Mostrar debug da primeira linha
                             if primeira_linha:
                                 st.info("🔍 Valores da primeira linha do CSV:")
-                                sample_data = {k: v[:50] if v else 'VAZIO' for k, v in list(primeira_linha.items())[:15]}
-                                st.json(sample_data)
+                                
+                                # Mostrar especificamente a coluna índice 4
+                                row_values = list(primeira_linha.values())
+                                row_keys = list(primeira_linha.keys())
+                                
+                                st.json({
+                                    'coluna_indice_4_nome': row_keys[4] if len(row_keys) > 4 else 'NÃO EXISTE',
+                                    'coluna_indice_4_valor': row_values[4] if len(row_values) > 4 else 'NÃO EXISTE',
+                                    'campo_details-N_mero_ID': primeira_linha.get('details-N_mero_ID', 'NÃO ENCONTRADO'),
+                                    'todas_colunas_com_valores': {k: v[:50] if v else 'VAZIO' for k, v in list(primeira_linha.items())[:10]}
+                                })
                             
                             st.info(f"✓ Mapeados {len(id_map)} registros com ID do projeto")
                             
