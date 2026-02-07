@@ -157,8 +157,11 @@ with tab1:
                                 if idx == 0:
                                     primeira_linha = row
                                 
-                                # Buscar instanceId
-                                instance_id = row.get('KEY') or row.get('InstanceID') or row.get('meta-instanceID')
+                                # Buscar instanceId - tentar múltiplos formatos
+                                instance_id_raw = row.get('KEY') or row.get('InstanceID') or row.get('meta-instanceID')
+                                
+                                if not instance_id_raw:
+                                    continue
                                 
                                 # PRIORIDADE 1: Buscar especificamente "details-N_mero_ID"
                                 id_projeto = row.get('details-N_mero_ID')
@@ -174,15 +177,28 @@ with tab1:
                                 if id_projeto:
                                     id_projeto = str(id_projeto).strip()
                                 
-                                if instance_id and id_projeto:
-                                    # Remover o prefixo 'uuid:' se existir
-                                    if instance_id.startswith('uuid:'):
-                                        instance_id = instance_id[5:]
-                                    id_map[instance_id] = id_projeto
+                                if id_projeto:
+                                    # Criar múltiplas variações do instanceId para aumentar chance de match
+                                    instance_ids = []
+                                    
+                                    # Formato 1: Original
+                                    instance_ids.append(instance_id_raw)
+                                    
+                                    # Formato 2: Sem prefixo 'uuid:'
+                                    if instance_id_raw.startswith('uuid:'):
+                                        instance_ids.append(instance_id_raw[5:])
+                                    
+                                    # Formato 3: Com prefixo 'uuid:' (se não tiver)
+                                    if not instance_id_raw.startswith('uuid:'):
+                                        instance_ids.append(f"uuid:{instance_id_raw}")
+                                    
+                                    # Adicionar todas as variações ao mapa
+                                    for iid in instance_ids:
+                                        id_map[iid] = id_projeto
                                     
                                     # DEBUG: Mostrar primeiros 3 mapeamentos
-                                    if len(id_map) <= 3:
-                                        st.success(f"✓ Mapeamento {len(id_map)}: instanceId={instance_id[:30]}... → ID={id_projeto}")
+                                    if len(id_map) <= 9:  # 3 registros x 3 variações = 9
+                                        st.success(f"✓ Mapeado ID={id_projeto} para instanceId={instance_ids[0][:30]}...")
                             
                             # Mostrar debug da primeira linha
                             if primeira_linha:
@@ -229,7 +245,13 @@ with tab1:
                                 
                                 # DEBUG nas primeiras 3 iterações
                                 if idx < 3:
-                                    st.info(f"🔍 Submission {idx+1}: instanceId={instance_id[:30] if instance_id else 'None'}... | ID Projeto={'✓ '+id_projeto if id_projeto else '❌ NÃO ENCONTRADO'}")
+                                    st.info(f"🔍 Submission {idx+1}:")
+                                    st.json({
+                                        'instanceId_da_API': instance_id[:50] if instance_id else 'None',
+                                        'ID_encontrado_no_mapa': id_projeto if id_projeto else '❌ NÃO ENCONTRADO',
+                                        'total_chaves_no_mapa': len(id_map),
+                                        'primeiras_3_chaves_mapa': list(id_map.keys())[:3] if id_map else []
+                                    })
                                 
                                 # Buscar anexos desta submission
                                 attachments_url = f"{base_url}/submissions/{instance_id}/attachments"
