@@ -134,16 +134,43 @@ with tab1:
                             anexos_baixados = []
                             
                             # Para cada submission, baixar seus anexos
-                            for submission in submissions_data:
+                            for idx, submission in enumerate(submissions_data):
                                 instance_id = submission.get('instanceId')
+                                
+                                # DEBUG: Mostrar estrutura na primeira submission
+                                if idx == 0:
+                                    st.info(f"🔍 Estrutura da primeira submission:")
+                                    st.json({
+                                        'keys': list(submission.keys()),
+                                        'instanceId': instance_id[:20] + '...' if instance_id else None,
+                                        'has_details': 'details' in submission,
+                                        'sample_fields': {k: str(v)[:50] for k, v in list(submission.items())[:5]}
+                                    })
+                                
                                 
                                 # Buscar o ID do projeto (details-N_mero_ID) desta submission
                                 # Procurar no campo correto do JSON
                                 id_projeto = None
+                                
+                                # Tentar múltiplas variações do campo
                                 if 'details' in submission and isinstance(submission['details'], dict):
-                                    id_projeto = submission['details'].get('N_mero_ID') or submission['details'].get('Numero_ID')
-                                elif 'details-N_mero_ID' in submission:
-                                    id_projeto = submission.get('details-N_mero_ID')
+                                    id_projeto = submission['details'].get('N_mero_ID') or \
+                                                submission['details'].get('Numero_ID') or \
+                                                submission['details'].get('numero_id') or \
+                                                submission['details'].get('id')
+                                
+                                # Tentar nos campos diretos da submission
+                                if not id_projeto:
+                                    id_projeto = submission.get('details-N_mero_ID') or \
+                                                submission.get('details-Numero_ID') or \
+                                                submission.get('N_mero_ID') or \
+                                                submission.get('Numero_ID')
+                                
+                                # DEBUG: Mostrar aviso se não encontrar ID
+                                if not id_projeto:
+                                    st.warning(f"⚠️ ID do projeto não encontrado para submission {instance_id[:8]}...")
+                                else:
+                                    st.info(f"✓ ID encontrado: {id_projeto} para submission {instance_id[:8]}...")
                                 
                                 # Buscar anexos desta submission
                                 attachments_url = f"{base_url}/submissions/{instance_id}/attachments"
