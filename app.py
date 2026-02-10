@@ -446,7 +446,7 @@ def processar_imagem(doc, valor_imagem, dirs):
         # Tentar caminho local primeiro (Windows)
         imagem_path = 'C:/arquivos_sepe/xxx.jpg'
         if os.path.exists(imagem_path):
-            return InlineImage(doc, imagem_path, Cm(3))
+            return InlineImage(doc, imagem_path, Cm(8))
         
         # Tentar baixar imagem padrão da internet
         try:
@@ -478,7 +478,7 @@ def processar_imagem(doc, valor_imagem, dirs):
         for imagem_path in caminhos_possiveis:
             if os.path.exists(imagem_path):
                 try:
-                    return InlineImage(doc, imagem_path, Cm(7))
+                    return InlineImage(doc, imagem_path, Cm(12))
                 except Exception as e:
                     print(f"Erro ao processar imagem {imagem_path}: {e}")
                     continue
