@@ -388,11 +388,11 @@ def processar_relatorios(xlsx_path, modelo_path, dirs, indices_selecionados=None
         doc = DocxTemplate(modelo_path)
         
         # Processar imagens
-        imagem1 = processar_imagem(doc, valores[17], dirs)
+        imagem1 = processar_imagem(doc, valores[18], dirs)
         imagem2 = processar_imagem(doc, valores[18], dirs)
-        imagem3 = processar_imagem(doc, valores[19], dirs)
-        imagem4 = processar_imagem(doc, valores[20], dirs)
-        imagem5 = processar_imagem(doc, valores[21], dirs)
+        imagem3 = processar_imagem(doc, valores[20], dirs)
+        imagem4 = processar_imagem(doc, valores[21], dirs)
+        imagem5 = processar_imagem(doc, valores[22], dirs)
         
         # Formatar data se necessário (converter de YYYY-MM-DD para DD-MM-YYYY)
         data_formatada = valores[2]
