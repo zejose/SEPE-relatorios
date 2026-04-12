@@ -389,7 +389,7 @@ def processar_relatorios(xlsx_path, modelo_path, dirs, indices_selecionados=None
         
         # Processar imagens
         imagem1 = processar_imagem(doc, valores[18], dirs)
-        imagem2 = processar_imagem(doc, valores[18], dirs)
+        imagem2 = processar_imagem(doc, valores[19], dirs)
         imagem3 = processar_imagem(doc, valores[20], dirs)
         imagem4 = processar_imagem(doc, valores[21], dirs)
         imagem5 = processar_imagem(doc, valores[22], dirs)
@@ -412,12 +412,12 @@ def processar_relatorios(xlsx_path, modelo_path, dirs, indices_selecionados=None
         doc.render({
             'relatorio': valores[0],
             'id_proj': valores[5],
-            'id_tipo_rel': valores[7],
-            'meta': valores[23],
+            'id_tipo_rel': valores[8],
+            'meta': valores[25],
             'data': data_formatada,
             'processo_sei': valores[6],
-            'cidade': valores[11],
-            'responsavel': valores[26],
+            'cidade': valores[12],
+            'responsavel': valores[27],
             'lat': valores[12],
             'long': valores[13],
             'observacao': valores[22],
