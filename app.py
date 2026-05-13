@@ -410,6 +410,8 @@ def processar_relatorios(xlsx_path, modelo_path, dirs, indices_selecionados=None
         
         # Renderizar documento
         doc.render({
+            'possui_placa': valores[9],
+            'plano_trabalho': valores[10],
             'relatorio': valores[0],
             'id_proj': valores[5],
             'id_tipo_rel': valores[8],
