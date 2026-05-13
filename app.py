@@ -422,7 +422,7 @@ def processar_relatorios(xlsx_path, modelo_path, dirs, indices_selecionados=None
             'responsavel': valores[27],
             'lat': valores[13],
             'long': valores[14],
-            'observacao': valores[22],
+            'observacao': valores[23],
             'tipo_proj': valores[17],
             'imagem_1': imagem1,
             'imagem_2': imagem2,
