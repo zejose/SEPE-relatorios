@@ -98,27 +98,31 @@ with tab1:
                     
                     num_linhas = len(csv_content.split('\n')) - 1
 
-                    # Gravar cópia do CSV em C:\sepe
+                    # Gravar cópia do CSV em C:/sepe
                     try:
-                        pasta_sepe = r'C:\sepe'
-                        os.makedirs(pasta_sepe, exist_ok=True)
-                        csv_local_path = os.path.join(pasta_sepe, 'dados_odk.csv')
-                        with open(csv_local_path, 'w', encoding='utf-8') as f:
-                            f.write(csv_content)
-                        st.success(f"💾 Planilha salva em: {csv_local_path}")
+                        pasta_sepe = Path('C:/sepe')
+                        pasta_sepe.mkdir(parents=True, exist_ok=True)
+                        csv_local_path = pasta_sepe / 'dados_odk.csv'
+                        csv_local_path.write_text(csv_content, encoding='utf-8')
+                        if csv_local_path.exists() and csv_local_path.stat().st_size > 0:
+                            st.success(f"💾 Planilha salva em: {csv_local_path} ({csv_local_path.stat().st_size} bytes)")
+                        else:
+                            st.warning("⚠️ Arquivo criado mas parece vazio ou não encontrado.")
                     except Exception as e:
-                        st.warning(f"⚠️ Não foi possível salvar planilha em C:\\sepe: {e}")
+                        st.warning(f"⚠️ Não foi possível salvar planilha em C:/sepe: {e}")
                     
                     if baixar_anexos:
                         st.info("Verificando anexos no servidor ODK...")
 
                         # Diretório principal C:/sepe/midia/
-                        local_media_dir = 'C:/sepe/midia'
-                        os.makedirs(local_media_dir, exist_ok=True)
+                        pasta_midia = Path('C:/sepe/midia')
+                        pasta_midia.mkdir(parents=True, exist_ok=True)
+                        local_media_dir = str(pasta_midia)
 
                         # Diretório temporário como fallback
-                        temp_media_dir = os.path.join(tempfile.gettempdir(), 'odk_media')
-                        os.makedirs(temp_media_dir, exist_ok=True)
+                        pasta_temp = Path(tempfile.gettempdir()) / 'odk_media'
+                        pasta_temp.mkdir(parents=True, exist_ok=True)
+                        temp_media_dir = str(pasta_temp)
 
                         try:
                             # ── PASSO 1: Listar arquivos já existentes no HD ──────────────
@@ -185,8 +189,8 @@ with tab1:
                                         'nome_com_prefixo': novo_nome,
                                         'instance_id': instance_id,
                                         'attachments_url': attachments_url,
-                                        'caminho_local': os.path.join(local_media_dir, att_name),
-                                        'caminho_temp': os.path.join(temp_media_dir, att_name),
+                                        'caminho_local': str(pasta_midia / att_name),
+                                        'caminho_temp': str(pasta_temp / att_name),
                                     }
                                     todos_anexos_servidor.append(entrada)
 
@@ -507,10 +511,10 @@ with col2:
     local_exists = os.path.exists('C:/arquivos_sepe')
     
     if local_exists:
-        st.info("**Imagem padrão:** `C:/arquivos_sepe/xxx.jpg`")
+        st.info("**Imagem padrão:** `C:/sepe/xxx.jpg`")
         st.info("**Imagens do projeto:** `C:/arquivos_sepe/media/`")
         
-        if os.path.exists('C:/arquivos_sepe/xxx.jpg'):
+        if os.path.exists('C:/sepe/xxx.jpg'):
             st.success("✅ Imagem padrão local encontrada")
         else:
             st.info("ℹ️ Usando imagem padrão da internet")
@@ -732,4 +736,4 @@ if st.button("🚀 Gerar Relatórios", type="primary", use_container_width=True,
             st.exception(e)
 
 st.markdown("---")
-st.caption("Desenvolvido para SEPE - Sistema de Geração de Relatórios de Vistoria - versão 1.5")
+st.caption("Desenvolvido para SEPE - Sistema de Geração de Relatórios de Vistoria - versão 1.6")
