@@ -98,24 +98,28 @@ with tab1:
                     
                     num_linhas = len(csv_content.split('\n')) - 1
 
-                    # Gravar cópia do CSV em C:/sepe
+                    # Salvar CSV no session_state para download posterior
+                    st.session_state['csv_bytes'] = csv_content.encode('utf-8')
+
+                    # Tentar gravar localmente em C:/sepe (só funciona se o app rodar no próprio PC)
                     try:
                         pasta_sepe = Path('C:/sepe')
                         pasta_sepe.mkdir(parents=True, exist_ok=True)
                         csv_local_path = pasta_sepe / 'dados_odk.csv'
                         csv_local_path.write_text(csv_content, encoding='utf-8')
                         if csv_local_path.exists() and csv_local_path.stat().st_size > 0:
-                            st.success(f"💾 Planilha salva em: {csv_local_path} ({csv_local_path.stat().st_size} bytes)")
+                            st.session_state['csv_pasta_local'] = str(pasta_sepe)
+                            st.success(f"💾 Planilha também salva localmente em: {csv_local_path} ({csv_local_path.stat().st_size} bytes)")
                         else:
-                            st.warning("⚠️ Arquivo criado mas parece vazio ou não encontrado.")
+                            st.warning("⚠️ Não foi possível gravar localmente (app pode estar rodando em servidor remoto).")
                     except Exception as e:
-                        st.warning(f"⚠️ Não foi possível salvar planilha em C:/sepe: {e}")
+                        st.info(f"ℹ️ App rodando em servidor remoto — use o botão de download abaixo para salvar o CSV no seu PC.")
                     
                     if baixar_anexos:
                         st.info("Verificando anexos no servidor ODK...")
 
-                        # Diretório principal C:/sepe/midia/
-                        pasta_midia = Path('C:/sepe/midia')
+                        # Diretório principal C:/sepe/media/
+                        pasta_midia = Path('C:/sepe/media')
                         pasta_midia.mkdir(parents=True, exist_ok=True)
                         local_media_dir = str(pasta_midia)
 
@@ -127,7 +131,7 @@ with tab1:
                         try:
                             # ── PASSO 1: Listar arquivos já existentes no HD ──────────────
                             arquivos_no_hd = set(os.listdir(local_media_dir))
-                            st.info(f"📂 {len(arquivos_no_hd)} arquivos já existem em C:/sepe/midia/")
+                            st.info(f"📂 {len(arquivos_no_hd)} arquivos já existem em C:/sepe/media/")
 
                             # ── PASSO 2: Montar id_map a partir do CSV ────────────────────
                             csv_reader = csv.DictReader(io.StringIO(csv_content))
@@ -213,7 +217,7 @@ with tab1:
                             erros = 0
 
                             if total_faltando == 0:
-                                st.success("✅ Todos os anexos já estão em C:/sepe/midia/ — nenhum download necessário!")
+                                st.success("✅ Todos os anexos já estão em C:/sepe/media/ — nenhum download necessário!")
                             else:
                                 progress_anexos = st.progress(0)
                                 status_anexos = st.empty()
@@ -226,7 +230,7 @@ with tab1:
                                     try:
                                         file_response = requests.get(att_url, auth=auth, timeout=30)
                                         if file_response.status_code == 200:
-                                            # Salvar em C:/sepe/midia/
+                                            # Salvar em C:/sepe/media/
                                             with open(entrada['caminho_local'], 'wb') as f:
                                                 f.write(file_response.content)
                                             # Salvar no temp também
@@ -297,7 +301,44 @@ if 'csv_data' in st.session_state:
     
     fonte = "ODK Central" if st.session_state.get('data_source') == 'odk' else "Upload Manual"
     st.info(f"📊 Dados carregados de: **{fonte}**")
-    
+
+    # ── Botões de download do CSV e abrir pasta ──────────────────────────────
+    col_csv1, col_csv2, col_csv3 = st.columns(3)
+
+    with col_csv1:
+        csv_bytes = st.session_state.get('csv_bytes') or st.session_state['csv_data'].encode('utf-8')
+        st.download_button(
+            label="⬇️ Baixar Planilha CSV",
+            data=csv_bytes,
+            file_name="dados_odk.csv",
+            mime="text/csv",
+            use_container_width=True,
+            help="Salva o arquivo dados_odk.csv no seu computador"
+        )
+
+    with col_csv2:
+        pasta_local = st.session_state.get('csv_pasta_local', 'C:/sepe')
+        if st.button("📂 Abrir Pasta C:/sepe", use_container_width=True,
+                     help="Abre a pasta C:/sepe no Explorer (só funciona se o app rodar localmente)"):
+            try:
+                import subprocess
+                subprocess.Popen(['explorer', r'C:\sepe'])
+                st.success("✅ Abrindo C:/sepe no Explorer...")
+            except Exception as e:
+                st.warning(f"⚠️ Não foi possível abrir o Explorer: {e}")
+
+    with col_csv3:
+        if st.button("📂 Abrir Pasta C:/sepe/media", use_container_width=True,
+                     help="Abre a pasta C:/sepe/media no Explorer (só funciona se o app rodar localmente)"):
+            try:
+                import subprocess
+                subprocess.Popen(['explorer', r'C:\sepe\media'])
+                st.success("✅ Abrindo C:/sepe/media no Explorer...")
+            except Exception as e:
+                st.warning(f"⚠️ Não foi possível abrir o Explorer: {e}")
+
+    st.markdown("---")
+
     if 'anexos_baixados' in st.session_state and len(st.session_state['anexos_baixados']) > 0:
         st.subheader("📥 Download de Imagens")
         
@@ -394,9 +435,9 @@ def processar_imagem(doc, valor_imagem, dirs):
         return None
 
     else:
-        # Prioridade: C:/sepe/midia/ → temp → diretório dos relatórios
+        # Prioridade: C:/sepe/media/ → temp → diretório dos relatórios
         caminhos_possiveis = [
-            f'C:/sepe/midia/{valor_imagem}',
+            f'C:/sepe/media/{valor_imagem}',
             os.path.join(tempfile.gettempdir(), 'odk_media', valor_imagem),
             os.path.join(dirs.get('media', ''), valor_imagem),
         ]
@@ -736,4 +777,4 @@ if st.button("🚀 Gerar Relatórios", type="primary", use_container_width=True,
             st.exception(e)
 
 st.markdown("---")
-st.caption("Desenvolvido para SEPE - Sistema de Geração de Relatórios de Vistoria - versão 1.6")
+st.caption("Desenvolvido para SEPE - Sistema de Geração de Relatórios de Vistoria - versão 1.8")
