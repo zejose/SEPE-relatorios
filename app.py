@@ -303,39 +303,52 @@ if 'csv_data' in st.session_state:
     st.info(f"📊 Dados carregados de: **{fonte}**")
 
     # ── Botões de download do CSV e abrir pasta ──────────────────────────────
+    st.subheader("📁 Arquivos Locais")
     col_csv1, col_csv2, col_csv3 = st.columns(3)
 
+    # Garantir que csv_bytes sempre existe
+    _csv_bytes = st.session_state['csv_data'].encode('utf-8')
+
     with col_csv1:
-        csv_bytes = st.session_state.get('csv_bytes') or st.session_state['csv_data'].encode('utf-8')
         st.download_button(
             label="⬇️ Baixar Planilha CSV",
-            data=csv_bytes,
+            data=_csv_bytes,
             file_name="dados_odk.csv",
             mime="text/csv",
             use_container_width=True,
-            help="Salva o arquivo dados_odk.csv no seu computador"
+            key="btn_download_csv",
+            help="Salva dados_odk.csv no seu computador"
         )
 
     with col_csv2:
-        pasta_local = st.session_state.get('csv_pasta_local', 'C:/sepe')
-        if st.button("📂 Abrir Pasta C:/sepe", use_container_width=True,
-                     help="Abre a pasta C:/sepe no Explorer (só funciona se o app rodar localmente)"):
+        if st.button("📂 Abrir C:/sepe", use_container_width=True,
+                     key="btn_abrir_sepe",
+                     help="Abre C:/sepe no Explorer — só funciona se o app rodar localmente"):
+            import subprocess, platform
             try:
-                import subprocess
-                subprocess.Popen(['explorer', r'C:\sepe'])
-                st.success("✅ Abrindo C:/sepe no Explorer...")
+                if platform.system() == 'Windows':
+                    os.makedirs('C:/sepe', exist_ok=True)
+                    subprocess.Popen(['explorer', 'C:\\sepe'])
+                    st.success("✅ Abrindo C:/sepe...")
+                else:
+                    st.warning("⚠️ Abrir pasta só funciona no Windows local.")
             except Exception as e:
-                st.warning(f"⚠️ Não foi possível abrir o Explorer: {e}")
+                st.warning(f"⚠️ Erro: {e}")
 
     with col_csv3:
-        if st.button("📂 Abrir Pasta C:/sepe/media", use_container_width=True,
-                     help="Abre a pasta C:/sepe/media no Explorer (só funciona se o app rodar localmente)"):
+        if st.button("📂 Abrir C:/sepe/media", use_container_width=True,
+                     key="btn_abrir_media",
+                     help="Abre C:/sepe/media no Explorer — só funciona se o app rodar localmente"):
+            import subprocess, platform
             try:
-                import subprocess
-                subprocess.Popen(['explorer', r'C:\sepe\media'])
-                st.success("✅ Abrindo C:/sepe/media no Explorer...")
+                if platform.system() == 'Windows':
+                    os.makedirs('C:/sepe/media', exist_ok=True)
+                    subprocess.Popen(['explorer', 'C:\\sepe\\media'])
+                    st.success("✅ Abrindo C:/sepe/media...")
+                else:
+                    st.warning("⚠️ Abrir pasta só funciona no Windows local.")
             except Exception as e:
-                st.warning(f"⚠️ Não foi possível abrir o Explorer: {e}")
+                st.warning(f"⚠️ Erro: {e}")
 
     st.markdown("---")
 
@@ -777,4 +790,4 @@ if st.button("🚀 Gerar Relatórios", type="primary", use_container_width=True,
             st.exception(e)
 
 st.markdown("---")
-st.caption("Desenvolvido para SEPE - Sistema de Geração de Relatórios de Vistoria - versão 1.8")
+st.caption("Desenvolvido para SEPE - Sistema de Geração de Relatórios de Vistoria - versão 1.9")
