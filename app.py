@@ -110,160 +110,162 @@ with tab1:
                         st.warning(f"⚠️ Não foi possível salvar planilha em C:\\sepe: {e}")
                     
                     if baixar_anexos:
-                        st.info("Baixando anexos (imagens)...")
-                        
-                        local_media_dir = None
-                        if os.name == 'nt' or os.path.exists('C:/'):
-                            try:
-                                local_media_dir = 'C:/arquivos_sepe/media'
-                                os.makedirs(local_media_dir, exist_ok=True)
-                            except:
-                                local_media_dir = None
-                        
+                        st.info("Verificando anexos no servidor ODK...")
+
+                        # Diretório principal C:/sepe/midia/
+                        local_media_dir = 'C:/sepe/midia'
+                        os.makedirs(local_media_dir, exist_ok=True)
+
+                        # Diretório temporário como fallback
                         temp_media_dir = os.path.join(tempfile.gettempdir(), 'odk_media')
                         os.makedirs(temp_media_dir, exist_ok=True)
 
-                        # Pasta C:\sepe\midia — destino principal das fotos
-                        pasta_midia_sepe = r'C:\sepe\midia'
                         try:
-                            os.makedirs(pasta_midia_sepe, exist_ok=True)
-                        except Exception as e:
-                            st.warning(f"⚠️ Não foi possível criar C:\\sepe\\midia: {e}")
-                            pasta_midia_sepe = None
-                        
-                        try:
-                            import io
-                            csv_lines = csv_content.split('\n')
-                            csv_reader_header = csv.reader([csv_lines[0]])
-                            header_cols = next(csv_reader_header)
-                            
-                            id_cols = [col for col in header_cols if 'id' in col.lower() or 'ID' in col or 'mero' in col]
-                            
+                            # ── PASSO 1: Listar arquivos já existentes no HD ──────────────
+                            arquivos_no_hd = set(os.listdir(local_media_dir))
+                            st.info(f"📂 {len(arquivos_no_hd)} arquivos já existem em C:/sepe/midia/")
+
+                            # ── PASSO 2: Montar id_map a partir do CSV ────────────────────
                             csv_reader = csv.DictReader(io.StringIO(csv_content))
-                            
                             id_map = {}
-                            primeira_linha = None
-                            
-                            for idx, row in enumerate(csv_reader):
-                                if idx == 0:
-                                    primeira_linha = row
-                                
+
+                            for row in csv_reader:
                                 instance_id_raw = row.get('KEY') or row.get('InstanceID') or row.get('meta-instanceID')
-                                
                                 if not instance_id_raw:
                                     continue
-                                
+
                                 id_projeto = row.get('details-N_mero_ID')
-                                
                                 if not id_projeto or not str(id_projeto).strip():
                                     row_values = list(row.values())
                                     if len(row_values) > 4:
                                         id_projeto = row_values[4]
-                                
+
                                 if id_projeto:
                                     id_projeto = str(id_projeto).strip()
-                                
-                                if id_projeto:
-                                    instance_ids = []
-                                    instance_ids.append(instance_id_raw)
-                                    
-                                    if instance_id_raw.startswith('uuid:'):
-                                        instance_ids.append(instance_id_raw[5:])
-                                    
-                                    if not instance_id_raw.startswith('uuid:'):
-                                        instance_ids.append(f"uuid:{instance_id_raw}")
-                                    
-                                    for iid in instance_ids:
+                                    for iid in [
+                                        instance_id_raw,
+                                        instance_id_raw[5:] if instance_id_raw.startswith('uuid:') else f"uuid:{instance_id_raw}"
+                                    ]:
                                         id_map[iid] = id_projeto
-                            
+
                             num_registros = len(set(id_map.values()))
                             st.success(f"✅ {num_registros} registros mapeados com ID do projeto")
-                            
+
+                            # ── PASSO 3: Buscar lista de submissions do servidor ───────────
                             submissions_url = f"{base_url}/submissions"
                             submissions_response = requests.get(submissions_url, auth=auth)
                             submissions_response.raise_for_status()
                             submissions_data = submissions_response.json()
-                            
-                            total_anexos = 0
-                            anexos_baixados = []
-                            
-                            for idx, submission in enumerate(submissions_data):
+
+                            # ── PASSO 4: Varrer todos os anexos e separar o que falta ──────
+                            st.info("🔍 Comparando lista do servidor com arquivos locais...")
+
+                            todos_anexos_servidor = []
+                            anexos_para_baixar = []
+
+                            for submission in submissions_data:
                                 instance_id = submission.get('instanceId')
                                 id_projeto = id_map.get(instance_id)
-                                
+
                                 attachments_url = f"{base_url}/submissions/{instance_id}/attachments"
                                 att_response = requests.get(attachments_url, auth=auth)
-                                
-                                if att_response.status_code == 200:
-                                    attachments = att_response.json()
-                                    
-                                    for attachment in attachments:
-                                        att_name = attachment.get('name')
-                                        
-                                        att_download_url = f"{attachments_url}/{att_name}"
-                                        file_response = requests.get(att_download_url, auth=auth)
-                                        
-                                        if file_response.status_code == 200:
-                                            # Verificar que o conteúdo é realmente uma imagem
-                                            content_type = file_response.headers.get('Content-Type', '')
-                                            if 'image' not in content_type.lower():
-                                                print(f"Anexo ignorado (não é imagem): {att_name} - Content-Type: {content_type}")
-                                                continue
 
-                                            if id_projeto:
-                                                novo_nome = f"foto_{id_projeto}_{att_name}"
-                                            else:
-                                                novo_nome = f"foto_{att_name}"
+                                if att_response.status_code != 200:
+                                    continue
 
-                                            # Salvar em C:\temp\sepe\midia (destino principal)
-                                            if pasta_midia_sepe:
-                                                try:
-                                                    file_path_sepe = os.path.join(pasta_midia_sepe, att_name)
-                                                    with open(file_path_sepe, 'wb') as f:
-                                                        f.write(file_response.content)
-                                                except Exception as e:
-                                                    st.warning(f"Erro ao salvar {att_name} em C:\\sepe\\midia: {e}")
-                                            
-                                            if local_media_dir:
-                                                try:
-                                                    file_path_local = os.path.join(local_media_dir, att_name)
-                                                    with open(file_path_local, 'wb') as f:
-                                                        f.write(file_response.content)
-                                                except Exception as e:
-                                                    st.warning(f"Erro ao salvar {att_name} localmente: {e}")
-                                            
-                                            file_path_temp = os.path.join(temp_media_dir, att_name)
-                                            with open(file_path_temp, 'wb') as f:
-                                                f.write(file_response.content)
-                                            
-                                            anexos_baixados.append({
-                                                'nome_original': att_name,
-                                                'nome_com_prefixo': novo_nome,
-                                                'path_temp': file_path_temp,
-                                                'data': file_response.content
-                                            })
-                                            
-                                            total_anexos += 1
-                            
-                            st.session_state['anexos_baixados'] = anexos_baixados
-                            
-                            # Resumo dos destinos das fotos
-                            msgs_destino = []
-                            if pasta_midia_sepe and os.path.exists(pasta_midia_sepe):
-                                n = len([f for f in os.listdir(pasta_midia_sepe)])
-                                if n > 0:
-                                    msgs_destino.append(f"C:\\sepe\\midia ({n} arquivos)")
-                            if local_media_dir and os.path.exists(local_media_dir):
-                                arquivos_salvos = os.listdir(local_media_dir)
-                                if arquivos_salvos:
-                                    msgs_destino.append(f"C:\\arquivos_sepe\\media ({len(arquivos_salvos)} arquivos)")
+                                for attachment in att_response.json():
+                                    att_name = attachment.get('name')
+                                    if not att_name:
+                                        continue
 
-                            if msgs_destino:
-                                st.success(f"✅ {total_anexos} fotos salvas em: {' | '.join(msgs_destino)}")
+                                    novo_nome = f"foto_{id_projeto}_{att_name}" if id_projeto else f"foto_{att_name}"
+
+                                    entrada = {
+                                        'nome_original': att_name,
+                                        'nome_com_prefixo': novo_nome,
+                                        'instance_id': instance_id,
+                                        'attachments_url': attachments_url,
+                                        'caminho_local': os.path.join(local_media_dir, att_name),
+                                        'caminho_temp': os.path.join(temp_media_dir, att_name),
+                                    }
+                                    todos_anexos_servidor.append(entrada)
+
+                                    # Só agenda download se NÃO existe no HD
+                                    if att_name not in arquivos_no_hd:
+                                        anexos_para_baixar.append(entrada)
+
+                            total_servidor = len(todos_anexos_servidor)
+                            total_ja_tem = total_servidor - len(anexos_para_baixar)
+                            total_faltando = len(anexos_para_baixar)
+
+                            st.info(
+                                f"📊 Servidor: **{total_servidor}** anexos — "
+                                f"**{total_ja_tem}** já no HD, "
+                                f"**{total_faltando}** para baixar"
+                            )
+
+                            # ── PASSO 5: Baixar apenas os que faltam ─────────────────────
+                            baixados_ok = 0
+                            erros = 0
+
+                            if total_faltando == 0:
+                                st.success("✅ Todos os anexos já estão em C:/sepe/midia/ — nenhum download necessário!")
                             else:
-                                st.success(f"✅ {total_anexos} fotos baixadas (somente em memória)")
+                                progress_anexos = st.progress(0)
+                                status_anexos = st.empty()
+
+                                for i, entrada in enumerate(anexos_para_baixar, 1):
+                                    status_anexos.text(f"Baixando {i}/{total_faltando}: {entrada['nome_original']}")
+                                    progress_anexos.progress(i / total_faltando)
+
+                                    att_url = f"{entrada['attachments_url']}/{entrada['nome_original']}"
+                                    try:
+                                        file_response = requests.get(att_url, auth=auth, timeout=30)
+                                        if file_response.status_code == 200:
+                                            # Salvar em C:/sepe/midia/
+                                            with open(entrada['caminho_local'], 'wb') as f:
+                                                f.write(file_response.content)
+                                            # Salvar no temp também
+                                            with open(entrada['caminho_temp'], 'wb') as f:
+                                                f.write(file_response.content)
+                                            baixados_ok += 1
+                                        else:
+                                            erros += 1
+                                    except Exception as e:
+                                        st.warning(f"⚠️ Erro ao baixar {entrada['nome_original']}: {e}")
+                                        erros += 1
+
+                                progress_anexos.empty()
+                                status_anexos.empty()
+
+                            # ── PASSO 6: Registrar TODOS (baixados agora + já existentes) ──
+                            anexos_registrados = []
+                            for entrada in todos_anexos_servidor:
+                                caminho = entrada['caminho_local']
+                                if os.path.exists(caminho):
+                                    with open(caminho, 'rb') as f:
+                                        conteudo = f.read()
+                                    anexos_registrados.append({
+                                        'nome_original': entrada['nome_original'],
+                                        'nome_com_prefixo': entrada['nome_com_prefixo'],
+                                        'path_temp': caminho,
+                                        'data': conteudo,
+                                    })
+
+                            st.session_state['anexos_baixados'] = anexos_registrados
+
+                            msg = (
+                                f"✅ Concluído! {total_servidor} anexos no servidor — "
+                                f"{total_ja_tem} já existiam, "
+                                f"{baixados_ok} baixados agora"
+                            )
+                            if erros:
+                                msg += f", ⚠️ {erros} erros"
+                            st.success(msg)
+
                         except Exception as e:
                             st.warning(f"⚠️ Aviso ao baixar anexos: {str(e)}")
+                            st.exception(e)
                     
                     st.success(f"✅ Conectado com sucesso! {num_linhas} registros encontrados.")
                     st.rerun()
@@ -358,106 +360,53 @@ def converter_csv_para_xlsx(csv_file, xlsx_path):
     return xlsx_path
 
 
-def validar_imagem(path):
-    """
-    Valida se o arquivo no caminho dado é uma imagem real e legível.
-    Retorna True se válida, False caso contrário.
-    """
-    try:
-        from PIL import Image as PILImage
-        with PILImage.open(path) as img:
-            img.verify()
-        return True
-    except Exception as e:
-        print(f"Arquivo não é imagem válida ({path}): {e}")
-        return False
-
-
 def processar_imagem(doc, valor_imagem, dirs):
-    """
-    Processa uma imagem para inserção no relatório DOCX.
-    - Se valor_imagem é vazio/None: tenta usar imagem padrão.
-    - Se valor_imagem tem nome de arquivo: tenta encontrá-lo nos caminhos conhecidos.
-    - Valida cada candidato com PIL antes de passar ao python-docx.
-    - Retorna None se nenhuma imagem válida for encontrada.
-    """
+    """Processa uma imagem para o relatório — verifica HD local antes de baixar"""
+    if valor_imagem is None or valor_imagem == '':
+        # Imagem padrão local
+        imagem_path = 'C:/sepe/xxx.jpg'
+        if os.path.exists(imagem_path):
+            return InlineImage(doc, imagem_path, Cm(8))
 
-    def fazer_inline(path, tamanho_cm):
-        """Cria InlineImage apenas se o arquivo for uma imagem válida."""
-        if not os.path.exists(path):
-            return None
-        if not validar_imagem(path):
-            return None
+        # Fallback: imagem padrão da internet
         try:
-            return InlineImage(doc, path, Cm(tamanho_cm))
-        except Exception as e:
-            print(f"Erro ao criar InlineImage ({path}): {e}")
-            return None
-
-    def obter_imagem_padrao():
-        """
-        Tenta obter uma imagem padrão 'sem imagem disponível':
-        1. Caminho local (Windows)
-        2. Download da internet (com validação de Content-Type)
-        3. None se tudo falhar
-        """
-        # 1. Caminho local
-        local = 'C:/arquivos_sepe/xxx.jpg'
-        resultado = fazer_inline(local, 3)
-        if resultado:
-            return resultado
-
-        # 2. Download da internet
-        try:
-            url = (
+            default_image_url = (
                 "https://st2.depositphotos.com/12694644/47297/v/380/"
                 "depositphotos_472972706-stock-illustration-image-available-sign-isolated-white.jpg"
             )
-            temp_path = os.path.join(tempfile.gettempdir(), 'no_image_default.jpg')
+            temp_image_path = os.path.join(tempfile.gettempdir(), 'no_image_default.jpg')
 
-            if not os.path.exists(temp_path):
-                r = requests.get(url, timeout=10)
-                r.raise_for_status()
+            if not os.path.exists(temp_image_path):
+                response = requests.get(default_image_url, timeout=10)
+                if response.status_code == 200:
+                    with open(temp_image_path, 'wb') as f:
+                        f.write(response.content)
 
-                content_type = r.headers.get('Content-Type', '')
-                if 'image' not in content_type.lower():
-                    raise ValueError(
-                        f"URL da imagem padrão retornou Content-Type inválido: {content_type}"
-                    )
+            if os.path.exists(temp_image_path):
+                return InlineImage(doc, temp_image_path, Cm(3))
+        except Exception:
+            pass
 
-                with open(temp_path, 'wb') as f:
-                    f.write(r.content)
+        return None
 
-            resultado = fazer_inline(temp_path, 3)
-            if resultado:
-                return resultado
+    else:
+        # Prioridade: C:/sepe/midia/ → temp → diretório dos relatórios
+        caminhos_possiveis = [
+            f'C:/sepe/midia/{valor_imagem}',
+            os.path.join(tempfile.gettempdir(), 'odk_media', valor_imagem),
+            os.path.join(dirs.get('media', ''), valor_imagem),
+        ]
 
-        except Exception as e:
-            print(f"Não foi possível obter imagem padrão da internet: {e}")
+        for imagem_path in caminhos_possiveis:
+            if os.path.exists(imagem_path):
+                try:
+                    return InlineImage(doc, imagem_path, Cm(12))
+                except Exception as e:
+                    print(f"Erro ao processar imagem {imagem_path}: {e}")
+                    continue
 
-        return None  # Sem imagem disponível
-
-    # --- Sem nome de arquivo: usar imagem padrão ---
-    if not valor_imagem or str(valor_imagem).strip() == '':
-        return obter_imagem_padrao()
-
-    # --- Com nome de arquivo: procurar nos caminhos possíveis ---
-    nome = str(valor_imagem).strip()
-    caminhos_possiveis = [
-        rf'C:\sepe\midia\{nome}',
-        f'C:/arquivos_sepe/media/{nome}',
-        os.path.join(tempfile.gettempdir(), 'odk_media', nome),
-        os.path.join(dirs.get('media', ''), nome),
-    ]
-
-    for path in caminhos_possiveis:
-        resultado = fazer_inline(path, 12)
-        if resultado:
-            return resultado
-
-    # Imagem referenciada não encontrada ou inválida → usar padrão
-    print(f"Imagem '{nome}' não encontrada ou inválida em nenhum caminho. Usando imagem padrão.")
-    return obter_imagem_padrao()
+        print(f"Imagem não encontrada: {valor_imagem}")
+        return processar_imagem(doc, None, dirs)
 
 
 def processar_relatorios(xlsx_path, modelo_path, dirs, indices_selecionados=None):
@@ -783,4 +732,4 @@ if st.button("🚀 Gerar Relatórios", type="primary", use_container_width=True,
             st.exception(e)
 
 st.markdown("---")
-st.caption("Desenvolvido para SEPE - Sistema de Geração de Relatórios de Vistoria - versão 1.4")
+st.caption("Desenvolvido para SEPE - Sistema de Geração de Relatórios de Vistoria - versão 1.5")
