@@ -6,604 +6,575 @@ from docxtpl import DocxTemplate, InlineImage
 from docx.shared import Cm
 import os
 import tempfile
-import shutil
-from pathlib import Path
 import zipfile
-import sys
 import pandas as pd
 import requests
+import platform
+import subprocess
+from pathlib import Path
 from requests.auth import HTTPBasicAuth
+from io import StringIO, BytesIO
 
 st.set_page_config(page_title="Gerador de Relatórios SEPE", layout="wide")
 
 st.title("🏗️ Gerador de Relatórios de Vistoria")
 st.markdown("---")
 
-# Adicionar tabs para escolher fonte de dados
+# ── Tabs de fonte de dados ────────────────────────────────────────────────────
 tab1, tab2 = st.tabs(["📡 Conectar ao ODK Central", "📁 Upload de Arquivo CSV"])
 
+# ═══════════════════════════════════════════════════════════════════════════════
+# TAB 1 — ODK Central
+# ═══════════════════════════════════════════════════════════════════════════════
 with tab1:
     st.subheader("🔗 Conexão com ODK Central")
-    
+
     col_odk1, col_odk2 = st.columns(2)
-    
     with col_odk1:
-        odk_url = st.text_input(
-            "URL do ODK Central",
-            value="https://levantamentos.dflegal.df.gov.br",
-            help="URL base do servidor ODK Central"
-        )
-        
-        odk_project_id = st.text_input(
-            "ID do Projeto",
-            value="4",
-            help="ID numérico do projeto"
-        )
-        
-        odk_form_id = st.text_input(
-            "ID do Formulário",
-            value="aWX8oXGiD9zmcpDX7KtAer",
-            help="ID do formulário"
-        )
-    
+        odk_url        = st.text_input("URL do ODK Central",
+                                       value="https://levantamentos.dflegal.df.gov.br")
+        odk_project_id = st.text_input("ID do Projeto", value="4")
+        odk_form_id    = st.text_input("ID do Formulário",
+                                       value="aWX8oXGiD9zmcpDX7KtAer")
     with col_odk2:
-        odk_email = st.text_input(
-            "Email",
-            help="Email de usuário do ODK Central"
-        )
-        
-        odk_password = st.text_input(
-            "Senha",
-            type="password",
-            help="Senha do usuário"
-        )
-        
-        baixar_anexos = st.checkbox(
-            "Baixar anexos (imagens)",
-            value=True,
-            help="Baixa automaticamente as imagens enviadas no formulário"
-        )
-    
+        odk_email     = st.text_input("Email")
+        odk_password  = st.text_input("Senha", type="password")
+        baixar_anexos = st.checkbox("Baixar anexos (imagens)", value=True)
+
     if st.button("🔄 Conectar e Buscar Dados", type="primary", use_container_width=True):
         if not odk_email or not odk_password:
             st.error("❌ Por favor, preencha email e senha!")
         else:
             try:
                 with st.spinner("Conectando ao ODK Central..."):
-                    base_url = f"{odk_url}/v1/projects/{odk_project_id}/forms/{odk_form_id}"
-                    auth = HTTPBasicAuth(odk_email, odk_password)
-                    
-                    st.info("Buscando dados do formulário...")
-                    
-                    csv_url = f"{base_url}/submissions.csv.zip"
-                    
-                    response = requests.get(csv_url, auth=auth)
-                    response.raise_for_status()
-                    
                     import io
                     from zipfile import ZipFile
-                    
-                    zip_buffer = io.BytesIO(response.content)
-                    
-                    with ZipFile(zip_buffer, 'r') as zip_file:
-                        csv_filename = [f for f in zip_file.namelist() if f.endswith('.csv')][0]
-                        csv_content = zip_file.read(csv_filename).decode('utf-8')
-                    
-                    st.session_state['csv_data'] = csv_content
+
+                    base_url = (f"{odk_url}/v1/projects/{odk_project_id}"
+                                f"/forms/{odk_form_id}")
+                    auth = HTTPBasicAuth(odk_email, odk_password)
+
+                    st.info("Buscando dados do formulário...")
+                    response = requests.get(f"{base_url}/submissions.csv.zip",
+                                            auth=auth)
+                    response.raise_for_status()
+
+                    with ZipFile(io.BytesIO(response.content)) as zf:
+                        csv_fn      = [f for f in zf.namelist()
+                                       if f.endswith('.csv')][0]
+                        csv_content = zf.read(csv_fn).decode('utf-8')
+
+                    st.session_state['csv_data']    = csv_content
                     st.session_state['data_source'] = 'odk'
-                    st.session_state['odk_credentials'] = {
-                        'base_url': base_url,
-                        'auth': auth
-                    }
-                    
+                    st.session_state['csv_bytes']   = csv_content.encode('utf-8')
                     num_linhas = len(csv_content.split('\n')) - 1
 
-                    # Salvar CSV no session_state para download posterior
-                    st.session_state['csv_bytes'] = csv_content.encode('utf-8')
-
-                    # Tentar gravar localmente em C:/sepe (só funciona se o app rodar no próprio PC)
+                    # Tentar salvar CSV localmente
                     try:
                         pasta_sepe = Path('C:/sepe')
                         pasta_sepe.mkdir(parents=True, exist_ok=True)
-                        csv_local_path = pasta_sepe / 'dados_odk.csv'
-                        csv_local_path.write_text(csv_content, encoding='utf-8')
-                        if csv_local_path.exists() and csv_local_path.stat().st_size > 0:
+                        csv_local = pasta_sepe / 'dados_odk.csv'
+                        csv_local.write_text(csv_content, encoding='utf-8')
+                        if csv_local.exists() and csv_local.stat().st_size > 0:
                             st.session_state['csv_pasta_local'] = str(pasta_sepe)
-                            st.success(f"💾 Planilha também salva localmente em: {csv_local_path} ({csv_local_path.stat().st_size} bytes)")
-                        else:
-                            st.warning("⚠️ Não foi possível gravar localmente (app pode estar rodando em servidor remoto).")
-                    except Exception as e:
-                        st.info(f"ℹ️ App rodando em servidor remoto — use o botão de download abaixo para salvar o CSV no seu PC.")
-                    
+                            st.success(
+                                f"💾 CSV salvo localmente: {csv_local} "
+                                f"({csv_local.stat().st_size} bytes)")
+                    except Exception:
+                        st.info("ℹ️ App em servidor remoto — "
+                                "use o botão ⬇️ para baixar o CSV.")
+
+                    # ── Download de anexos ────────────────────────────────────
                     if baixar_anexos:
                         st.info("Verificando anexos no servidor ODK...")
 
-                        # Diretório principal C:/sepe/media/
-                        pasta_midia = Path('C:/sepe/media')
-                        pasta_midia.mkdir(parents=True, exist_ok=True)
-                        local_media_dir = str(pasta_midia)
-
-                        # Diretório temporário como fallback
-                        pasta_temp = Path(tempfile.gettempdir()) / 'odk_media'
+                        pasta_media = Path('C:/sepe/media')
+                        pasta_media.mkdir(parents=True, exist_ok=True)
+                        pasta_temp  = Path(tempfile.gettempdir()) / 'odk_media'
                         pasta_temp.mkdir(parents=True, exist_ok=True)
-                        temp_media_dir = str(pasta_temp)
 
                         try:
-                            # ── PASSO 1: Listar arquivos já existentes no HD ──────────────
-                            arquivos_no_hd = set(os.listdir(local_media_dir))
-                            st.info(f"📂 {len(arquivos_no_hd)} arquivos já existem em C:/sepe/media/")
+                            arquivos_no_hd = set(os.listdir(str(pasta_media)))
+                            st.info(f"📂 {len(arquivos_no_hd)} arquivos já "
+                                    f"existem em C:/sepe/media/")
 
-                            # ── PASSO 2: Montar id_map a partir do CSV ────────────────────
-                            csv_reader = csv.DictReader(io.StringIO(csv_content))
+                            # Montar id_map
                             id_map = {}
-
-                            for row in csv_reader:
-                                instance_id_raw = row.get('KEY') or row.get('InstanceID') or row.get('meta-instanceID')
-                                if not instance_id_raw:
+                            for row in csv.DictReader(io.StringIO(csv_content)):
+                                iid_raw = (row.get('KEY')
+                                           or row.get('InstanceID')
+                                           or row.get('meta-instanceID'))
+                                if not iid_raw:
                                     continue
+                                id_proj = row.get('details-N_mero_ID')
+                                if not id_proj or not str(id_proj).strip():
+                                    vals = list(row.values())
+                                    id_proj = vals[4] if len(vals) > 4 else None
+                                if id_proj:
+                                    id_proj = str(id_proj).strip()
+                                    alternativas = [iid_raw]
+                                    if iid_raw.startswith('uuid:'):
+                                        alternativas.append(iid_raw[5:])
+                                    else:
+                                        alternativas.append(f"uuid:{iid_raw}")
+                                    for k in alternativas:
+                                        id_map[k] = id_proj
 
-                                id_projeto = row.get('details-N_mero_ID')
-                                if not id_projeto or not str(id_projeto).strip():
-                                    row_values = list(row.values())
-                                    if len(row_values) > 4:
-                                        id_projeto = row_values[4]
+                            st.success(
+                                f"✅ {len(set(id_map.values()))} registros mapeados")
 
-                                if id_projeto:
-                                    id_projeto = str(id_projeto).strip()
-                                    for iid in [
-                                        instance_id_raw,
-                                        instance_id_raw[5:] if instance_id_raw.startswith('uuid:') else f"uuid:{instance_id_raw}"
-                                    ]:
-                                        id_map[iid] = id_projeto
+                            subs = requests.get(f"{base_url}/submissions",
+                                                auth=auth)
+                            subs.raise_for_status()
 
-                            num_registros = len(set(id_map.values()))
-                            st.success(f"✅ {num_registros} registros mapeados com ID do projeto")
+                            todos, para_baixar = [], []
+                            st.info("🔍 Comparando com arquivos locais...")
 
-                            # ── PASSO 3: Buscar lista de submissions do servidor ───────────
-                            submissions_url = f"{base_url}/submissions"
-                            submissions_response = requests.get(submissions_url, auth=auth)
-                            submissions_response.raise_for_status()
-                            submissions_data = submissions_response.json()
-
-                            # ── PASSO 4: Varrer todos os anexos e separar o que falta ──────
-                            st.info("🔍 Comparando lista do servidor com arquivos locais...")
-
-                            todos_anexos_servidor = []
-                            anexos_para_baixar = []
-
-                            for submission in submissions_data:
-                                instance_id = submission.get('instanceId')
-                                id_projeto = id_map.get(instance_id)
-
-                                attachments_url = f"{base_url}/submissions/{instance_id}/attachments"
-                                att_response = requests.get(attachments_url, auth=auth)
-
-                                if att_response.status_code != 200:
+                            for sub in subs.json():
+                                iid     = sub.get('instanceId')
+                                id_proj = id_map.get(iid)
+                                att_url = (f"{base_url}/submissions/"
+                                           f"{iid}/attachments")
+                                att_r   = requests.get(att_url, auth=auth)
+                                if att_r.status_code != 200:
                                     continue
-
-                                for attachment in att_response.json():
-                                    att_name = attachment.get('name')
-                                    if not att_name:
+                                for att in att_r.json():
+                                    nome = att.get('name')
+                                    if not nome:
                                         continue
-
-                                    novo_nome = f"foto_{id_projeto}_{att_name}" if id_projeto else f"foto_{att_name}"
-
                                     entrada = {
-                                        'nome_original': att_name,
-                                        'nome_com_prefixo': novo_nome,
-                                        'instance_id': instance_id,
-                                        'attachments_url': attachments_url,
-                                        'caminho_local': str(pasta_midia / att_name),
-                                        'caminho_temp': str(pasta_temp / att_name),
+                                        'nome_original':    nome,
+                                        'nome_com_prefixo': (
+                                            f"foto_{id_proj}_{nome}"
+                                            if id_proj else f"foto_{nome}"),
+                                        'attachments_url':  att_url,
+                                        'caminho_local':    str(pasta_media / nome),
+                                        'caminho_temp':     str(pasta_temp  / nome),
                                     }
-                                    todos_anexos_servidor.append(entrada)
+                                    todos.append(entrada)
+                                    if nome not in arquivos_no_hd:
+                                        para_baixar.append(entrada)
 
-                                    # Só agenda download se NÃO existe no HD
-                                    if att_name not in arquivos_no_hd:
-                                        anexos_para_baixar.append(entrada)
-
-                            total_servidor = len(todos_anexos_servidor)
-                            total_ja_tem = total_servidor - len(anexos_para_baixar)
-                            total_faltando = len(anexos_para_baixar)
+                            total    = len(todos)
+                            ja_tem   = total - len(para_baixar)
+                            faltando = len(para_baixar)
+                            baixados_ok = erros = 0
 
                             st.info(
-                                f"📊 Servidor: **{total_servidor}** anexos — "
-                                f"**{total_ja_tem}** já no HD, "
-                                f"**{total_faltando}** para baixar"
-                            )
+                                f"📊 Servidor: **{total}** anexos — "
+                                f"**{ja_tem}** já no HD, "
+                                f"**{faltando}** para baixar")
 
-                            # ── PASSO 5: Baixar apenas os que faltam ─────────────────────
-                            baixados_ok = 0
-                            erros = 0
-
-                            if total_faltando == 0:
-                                st.success("✅ Todos os anexos já estão em C:/sepe/media/ — nenhum download necessário!")
+                            if faltando == 0:
+                                st.success("✅ Todos os anexos já estão "
+                                           "em C:/sepe/media/")
                             else:
-                                progress_anexos = st.progress(0)
-                                status_anexos = st.empty()
-
-                                for i, entrada in enumerate(anexos_para_baixar, 1):
-                                    status_anexos.text(f"Baixando {i}/{total_faltando}: {entrada['nome_original']}")
-                                    progress_anexos.progress(i / total_faltando)
-
-                                    att_url = f"{entrada['attachments_url']}/{entrada['nome_original']}"
+                                prog   = st.progress(0)
+                                status = st.empty()
+                                for i, e in enumerate(para_baixar, 1):
+                                    status.text(f"Baixando {i}/{faltando}: "
+                                                f"{e['nome_original']}")
+                                    prog.progress(i / faltando)
                                     try:
-                                        file_response = requests.get(att_url, auth=auth, timeout=30)
-                                        if file_response.status_code == 200:
-                                            # Salvar em C:/sepe/media/
-                                            with open(entrada['caminho_local'], 'wb') as f:
-                                                f.write(file_response.content)
-                                            # Salvar no temp também
-                                            with open(entrada['caminho_temp'], 'wb') as f:
-                                                f.write(file_response.content)
+                                        r = requests.get(
+                                            f"{e['attachments_url']}/"
+                                            f"{e['nome_original']}",
+                                            auth=auth, timeout=30)
+                                        if r.status_code == 200:
+                                            Path(e['caminho_local']).write_bytes(
+                                                r.content)
+                                            Path(e['caminho_temp']).write_bytes(
+                                                r.content)
                                             baixados_ok += 1
                                         else:
                                             erros += 1
-                                    except Exception as e:
-                                        st.warning(f"⚠️ Erro ao baixar {entrada['nome_original']}: {e}")
+                                    except Exception as ex:
+                                        st.warning(f"⚠️ {e['nome_original']}: "
+                                                   f"{ex}")
                                         erros += 1
+                                prog.empty()
+                                status.empty()
 
-                                progress_anexos.empty()
-                                status_anexos.empty()
-
-                            # ── PASSO 6: Registrar TODOS (baixados agora + já existentes) ──
-                            anexos_registrados = []
-                            for entrada in todos_anexos_servidor:
-                                caminho = entrada['caminho_local']
-                                if os.path.exists(caminho):
-                                    with open(caminho, 'rb') as f:
-                                        conteudo = f.read()
-                                    anexos_registrados.append({
-                                        'nome_original': entrada['nome_original'],
-                                        'nome_com_prefixo': entrada['nome_com_prefixo'],
-                                        'path_temp': caminho,
-                                        'data': conteudo,
+                            registrados = []
+                            for e in todos:
+                                p = Path(e['caminho_local'])
+                                if p.exists():
+                                    registrados.append({
+                                        'nome_original':    e['nome_original'],
+                                        'nome_com_prefixo': e['nome_com_prefixo'],
+                                        'path_temp':        str(p),
+                                        'data':             p.read_bytes(),
                                     })
+                            st.session_state['anexos_baixados'] = registrados
 
-                            st.session_state['anexos_baixados'] = anexos_registrados
-
-                            msg = (
-                                f"✅ Concluído! {total_servidor} anexos no servidor — "
-                                f"{total_ja_tem} já existiam, "
-                                f"{baixados_ok} baixados agora"
-                            )
+                            msg = (f"✅ {total} anexos — {ja_tem} já existiam, "
+                                   f"{baixados_ok} baixados")
                             if erros:
                                 msg += f", ⚠️ {erros} erros"
                             st.success(msg)
 
                         except Exception as e:
-                            st.warning(f"⚠️ Aviso ao baixar anexos: {str(e)}")
+                            st.warning(f"⚠️ Erro ao baixar anexos: {e}")
                             st.exception(e)
-                    
-                    st.success(f"✅ Conectado com sucesso! {num_linhas} registros encontrados.")
+
+                    st.success(f"✅ Conectado! {num_linhas} registros.")
                     st.rerun()
-                    
+
             except Exception as e:
-                st.error(f"❌ Erro ao conectar: {str(e)}")
+                st.error(f"❌ Erro ao conectar: {e}")
                 st.exception(e)
 
+# ═══════════════════════════════════════════════════════════════════════════════
+# TAB 2 — Upload CSV + diretório manual de fotos
+# ═══════════════════════════════════════════════════════════════════════════════
 with tab2:
     st.subheader("📄 Upload Manual de CSV")
     csv_file_upload = st.file_uploader("Selecione o arquivo CSV", type=['csv'])
-    
     if csv_file_upload:
-        st.session_state['csv_data'] = csv_file_upload.getvalue().decode('utf-8')
+        st.session_state['csv_data']    = csv_file_upload.getvalue().decode('utf-8')
         st.session_state['data_source'] = 'upload'
         st.success("✅ Arquivo CSV carregado com sucesso!")
 
+    st.markdown("---")
+    st.subheader("🖼️ Diretório de Fotos")
+    st.caption("Informe a pasta onde estão as imagens referenciadas no CSV.")
+
+    dir_fotos_input = st.text_input(
+        "Caminho da pasta de fotos",
+        value=st.session_state.get('dir_fotos_manual', 'C:/sepe/media'),
+        placeholder="Ex: C:/sepe/media  ou  D:/fotos_vistoria",
+        help="A pasta deve ter os arquivos com os mesmos nomes do formulário ODK."
+    )
+
+    col_dir1, col_dir2 = st.columns(2)
+    with col_dir1:
+        if st.button("✅ Usar esta pasta", use_container_width=True,
+                     key="btn_usar_dir_fotos"):
+            if os.path.isdir(dir_fotos_input):
+                st.session_state['dir_fotos_manual'] = dir_fotos_input
+                n = len([f for f in os.listdir(dir_fotos_input)
+                         if f.lower().endswith(
+                             ('.jpg','.jpeg','.png','.gif','.bmp','.webp'))])
+                st.success(f"✅ Pasta configurada: {dir_fotos_input} "
+                           f"({n} imagens)")
+            else:
+                st.error(f"❌ Pasta não encontrada: {dir_fotos_input}")
+    with col_dir2:
+        if st.button("📂 Abrir no Explorer", use_container_width=True,
+                     key="btn_abrir_dir_fotos"):
+            try:
+                if platform.system() == 'Windows':
+                    subprocess.Popen(
+                        ['explorer', dir_fotos_input.replace('/', '\\')])
+                    st.success("✅ Abrindo no Explorer...")
+                else:
+                    st.warning("⚠️ Só funciona no Windows local.")
+            except Exception as ex:
+                st.warning(f"⚠️ Erro: {ex}")
+
+    if 'dir_fotos_manual' in st.session_state:
+        st.info(f"📂 Pasta de fotos ativa: "
+                f"**{st.session_state['dir_fotos_manual']}**")
+
 st.markdown("---")
 
-# Verificar se há dados carregados (de qualquer fonte)
+# ═══════════════════════════════════════════════════════════════════════════════
+# Painel principal — aparece após dados carregados
+# ═══════════════════════════════════════════════════════════════════════════════
 csv_file = None
 if 'csv_data' in st.session_state:
-    from io import StringIO, BytesIO
     csv_file = BytesIO(st.session_state['csv_data'].encode('utf-8'))
-    
-    fonte = "ODK Central" if st.session_state.get('data_source') == 'odk' else "Upload Manual"
+    fonte = ("ODK Central"
+             if st.session_state.get('data_source') == 'odk'
+             else "Upload Manual")
     st.info(f"📊 Dados carregados de: **{fonte}**")
 
-    # ── Botões de download do CSV e abrir pasta ──────────────────────────────
+    # ── Botões CSV + pastas ───────────────────────────────────────────────────
     st.subheader("📁 Arquivos Locais")
     col_csv1, col_csv2, col_csv3 = st.columns(3)
-
-    # Garantir que csv_bytes sempre existe
-    _csv_bytes = st.session_state['csv_data'].encode('utf-8')
 
     with col_csv1:
         st.download_button(
             label="⬇️ Baixar Planilha CSV",
-            data=_csv_bytes,
+            data=st.session_state['csv_data'].encode('utf-8'),
             file_name="dados_odk.csv",
             mime="text/csv",
             use_container_width=True,
             key="btn_download_csv",
-            help="Salva dados_odk.csv no seu computador"
         )
 
     with col_csv2:
         if st.button("📂 Abrir C:/sepe", use_container_width=True,
-                     key="btn_abrir_sepe",
-                     help="Abre C:/sepe no Explorer — só funciona se o app rodar localmente"):
-            import subprocess, platform
+                     key="btn_abrir_sepe"):
             try:
                 if platform.system() == 'Windows':
                     os.makedirs('C:/sepe', exist_ok=True)
                     subprocess.Popen(['explorer', 'C:\\sepe'])
                     st.success("✅ Abrindo C:/sepe...")
                 else:
-                    st.warning("⚠️ Abrir pasta só funciona no Windows local.")
-            except Exception as e:
-                st.warning(f"⚠️ Erro: {e}")
+                    st.warning("⚠️ Só funciona no Windows local.")
+            except Exception as ex:
+                st.warning(f"⚠️ Erro: {ex}")
 
     with col_csv3:
         if st.button("📂 Abrir C:/sepe/media", use_container_width=True,
-                     key="btn_abrir_media",
-                     help="Abre C:/sepe/media no Explorer — só funciona se o app rodar localmente"):
-            import subprocess, platform
+                     key="btn_abrir_media"):
             try:
                 if platform.system() == 'Windows':
                     os.makedirs('C:/sepe/media', exist_ok=True)
                     subprocess.Popen(['explorer', 'C:\\sepe\\media'])
                     st.success("✅ Abrindo C:/sepe/media...")
                 else:
-                    st.warning("⚠️ Abrir pasta só funciona no Windows local.")
-            except Exception as e:
-                st.warning(f"⚠️ Erro: {e}")
+                    st.warning("⚠️ Só funciona no Windows local.")
+            except Exception as ex:
+                st.warning(f"⚠️ Erro: {ex}")
 
     st.markdown("---")
 
-    if 'anexos_baixados' in st.session_state and len(st.session_state['anexos_baixados']) > 0:
+    # ── Download ZIP de imagens ───────────────────────────────────────────────
+    if st.session_state.get('anexos_baixados'):
         st.subheader("📥 Download de Imagens")
-        
         col_img1, col_img2 = st.columns(2)
-        
         with col_img1:
-            st.info(f"**{len(st.session_state['anexos_baixados'])} imagens** disponíveis para download")
-        
+            st.info(f"**{len(st.session_state['anexos_baixados'])} imagens** "
+                    f"disponíveis")
         with col_img2:
-            if st.button("📦 Baixar Todas as Imagens (ZIP)", use_container_width=True):
-                try:
-                    zip_buffer = BytesIO()
-                    with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zip_file:
-                        for anexo in st.session_state['anexos_baixados']:
-                            zip_file.writestr(anexo['nome_com_prefixo'], anexo['data'])
-                    
-                    zip_buffer.seek(0)
-                    
-                    st.download_button(
-                        label="⬇️ Download ZIP com Imagens Renomeadas",
-                        data=zip_buffer,
-                        file_name="imagens_odk_com_prefixo_foto.zip",
-                        mime="application/zip",
-                        use_container_width=True
-                    )
-                    
-                    st.success("✅ ZIP criado com sucesso! As imagens foram renomeadas com prefixo 'foto_ID_'.")
-                except Exception as e:
-                    st.error(f"❌ Erro ao criar ZIP: {str(e)}")
-        
+            zip_buf = BytesIO()
+            with zipfile.ZipFile(zip_buf, 'w', zipfile.ZIP_DEFLATED) as zf:
+                for anexo in st.session_state['anexos_baixados']:
+                    zf.writestr(anexo['nome_com_prefixo'], anexo['data'])
+            zip_buf.seek(0)
+            st.download_button(
+                label="📦 Baixar Todas as Imagens (ZIP)",
+                data=zip_buf,
+                file_name="imagens_odk.zip",
+                mime="application/zip",
+                use_container_width=True,
+                key="btn_download_zip_imagens",
+            )
         st.markdown("---")
 
-# Criar diretórios temporários
+# ── Diretórios temporários ────────────────────────────────────────────────────
 @st.cache_resource
 def criar_diretorios_temp():
-    temp_dir = tempfile.mkdtemp()
-    dirs = {
-        'base': temp_dir,
-        'xlsx': os.path.join(temp_dir, 'arquivo_xlsx'),
-        'relatorios': os.path.join(temp_dir, 'relatorios_pdf'),
-        'media': os.path.join(temp_dir, 'media'),
-        'sem_media': os.path.join(temp_dir, 'sem_media'),
-        'modelo': os.path.join(temp_dir, 'modelo_relatorio')
-    }
-    for d in dirs.values():
-        os.makedirs(d, exist_ok=True)
+    base = tempfile.mkdtemp()
+    dirs = {'base': base}
+    for nome in ['xlsx', 'relatorios', 'media', 'modelo']:
+        p = os.path.join(base, nome)
+        os.makedirs(p, exist_ok=True)
+        dirs[nome] = p
     return dirs
 
+dirs = criar_diretorios_temp()
+
+# ── Modelo do relatório ───────────────────────────────────────────────────────
+st.subheader("📄 Modelo do Relatório")
+modelo_file = st.file_uploader("Upload do modelo DOCX (formulario.docx)",
+                                type=['docx'])
+
+# Info sobre pasta de imagens ativa
+st.subheader("📁 Pasta de Imagens para Relatórios")
+dir_ativo = st.session_state.get('dir_fotos_manual', 'C:/sepe/media')
+if os.path.isdir(dir_ativo):
+    n_imgs = len([f for f in os.listdir(dir_ativo)
+                  if f.lower().endswith(
+                      ('.jpg','.jpeg','.png','.gif','.bmp','.webp'))])
+    st.success(f"✅ Usando: **{dir_ativo}** ({n_imgs} imagens encontradas)")
+else:
+    st.info(f"📂 Pasta configurada: **{dir_ativo}** "
+            f"(não encontrada localmente — app pode estar em servidor remoto)")
+
+st.markdown("---")
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Funções de processamento
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def imagem_valida(path: str) -> bool:
+    """Valida com PIL se o arquivo é uma imagem real (evita UnrecognizedImageError)."""
+    try:
+        from PIL import Image as PILImage
+        with PILImage.open(path) as img:
+            img.verify()
+        return True
+    except Exception:
+        return False
+
+
+def processar_imagem(doc, valor_imagem, dirs):
+    """
+    Retorna InlineImage validado com PIL ou None.
+    Ordem de busca:
+      1. Pasta manual (dir_fotos_manual do session_state)
+      2. C:/sepe/media/
+      3. Pasta temporária ODK
+      4. Pasta interna temporária
+    Sem imagem → imagem padrão (xxx.jpg local ou download).
+    """
+
+    def inline(path, cm):
+        if not os.path.exists(path):
+            return None
+        if not imagem_valida(path):
+            print(f"Arquivo inválido (não é imagem): {path}")
+            return None
+        try:
+            return InlineImage(doc, path, Cm(cm))
+        except Exception as ex:
+            print(f"InlineImage falhou ({path}): {ex}")
+            return None
+
+    def imagem_padrao():
+        r = inline('C:/sepe/xxx.jpg', 3)
+        if r:
+            return r
+        try:
+            url = ("https://st2.depositphotos.com/12694644/47297/v/380/"
+                   "depositphotos_472972706-stock-illustration-image-available"
+                   "-sign-isolated-white.jpg")
+            tmp = os.path.join(tempfile.gettempdir(), 'no_image_default.jpg')
+            if not os.path.exists(tmp):
+                resp = requests.get(url, timeout=10)
+                resp.raise_for_status()
+                ct = resp.headers.get('Content-Type', '')
+                if 'image' not in ct.lower():
+                    raise ValueError(f"Content-Type inválido: {ct}")
+                Path(tmp).write_bytes(resp.content)
+            r = inline(tmp, 3)
+            if r:
+                return r
+        except Exception as ex:
+            print(f"Imagem padrão internet falhou: {ex}")
+        return None
+
+    if not valor_imagem or str(valor_imagem).strip() == '':
+        return imagem_padrao()
+
+    nome = str(valor_imagem).strip()
+
+    candidatos = []
+    dir_manual = st.session_state.get('dir_fotos_manual', '')
+    if dir_manual:
+        candidatos.append(os.path.join(dir_manual, nome))
+    candidatos += [
+        f'C:/sepe/media/{nome}',
+        os.path.join(tempfile.gettempdir(), 'odk_media', nome),
+        os.path.join(dirs.get('media', ''), nome),
+    ]
+
+    for path in candidatos:
+        r = inline(path, 12)
+        if r:
+            return r
+
+    print(f"Imagem '{nome}' não encontrada. Usando padrão.")
+    return imagem_padrao()
+
+
 def converter_csv_para_xlsx(csv_file, xlsx_path):
-    """Converte CSV para XLSX com coluna de numeração"""
     wb = Workbook()
     ws = wb.active
     ws.title = 'dados_vistoria'
-    
-    csv_content = csv_file.getvalue().decode('utf-8').splitlines()
-    csv_reader = csv.reader(csv_content, delimiter=',')
-    
-    for row_index, row in enumerate(csv_reader, start=1):
-        ws.cell(row=row_index, column=1, value=row_index)
-        for col_index, value in enumerate(row, start=2):
-            ws.cell(row=row_index, column=col_index, value=value)
-    
+    linhas = csv.reader(csv_file.getvalue().decode('utf-8').splitlines())
+    for row_idx, row in enumerate(linhas, start=1):
+        ws.cell(row=row_idx, column=1, value=row_idx)
+        for col_idx, val in enumerate(row, start=2):
+            ws.cell(row=row_idx, column=col_idx, value=val)
     wb.save(xlsx_path)
     return xlsx_path
 
 
-def processar_imagem(doc, valor_imagem, dirs):
-    """Processa uma imagem para o relatório — verifica HD local antes de baixar"""
-    if valor_imagem is None or valor_imagem == '':
-        # Imagem padrão local
-        imagem_path = 'C:/sepe/xxx.jpg'
-        if os.path.exists(imagem_path):
-            return InlineImage(doc, imagem_path, Cm(8))
+def processar_relatorios(xlsx_path, modelo_path, dirs,
+                          indices_selecionados=None):
+    wb    = openpyxl.load_workbook(xlsx_path)
+    rows  = list(wb['dados_vistoria'].values)
 
-        # Fallback: imagem padrão da internet
-        try:
-            default_image_url = (
-                "https://st2.depositphotos.com/12694644/47297/v/380/"
-                "depositphotos_472972706-stock-illustration-image-available-sign-isolated-white.jpg"
-            )
-            temp_image_path = os.path.join(tempfile.gettempdir(), 'no_image_default.jpg')
-
-            if not os.path.exists(temp_image_path):
-                response = requests.get(default_image_url, timeout=10)
-                if response.status_code == 200:
-                    with open(temp_image_path, 'wb') as f:
-                        f.write(response.content)
-
-            if os.path.exists(temp_image_path):
-                return InlineImage(doc, temp_image_path, Cm(3))
-        except Exception:
-            pass
-
-        return None
-
-    else:
-        # Prioridade: C:/sepe/media/ → temp → diretório dos relatórios
-        caminhos_possiveis = [
-            f'C:/sepe/media/{valor_imagem}',
-            os.path.join(tempfile.gettempdir(), 'odk_media', valor_imagem),
-            os.path.join(dirs.get('media', ''), valor_imagem),
-        ]
-
-        for imagem_path in caminhos_possiveis:
-            if os.path.exists(imagem_path):
-                try:
-                    return InlineImage(doc, imagem_path, Cm(12))
-                except Exception as e:
-                    print(f"Erro ao processar imagem {imagem_path}: {e}")
-                    continue
-
-        print(f"Imagem não encontrada: {valor_imagem}")
-        return processar_imagem(doc, None, dirs)
-
-
-def processar_relatorios(xlsx_path, modelo_path, dirs, indices_selecionados=None):
-    """Processa e gera os relatórios em DOCX"""
-    
-    workbook = openpyxl.load_workbook(xlsx_path)
-    sheet = workbook['dados_vistoria']
-    list_values = list(sheet.values)
-    
-    relatorios_gerados = []
-    progress_bar = st.progress(0)
-    status_text = st.empty()
-    
     if indices_selecionados:
-        dados_filtrados = [list_values[0]] + [list_values[i] for i in indices_selecionados if i < len(list_values)]
+        dados = [rows[0]] + [rows[i] for i in indices_selecionados
+                             if i < len(rows)]
     else:
-        dados_filtrados = list_values
-    
-    total = len(dados_filtrados[1:])
-    
-    for idx, valores in enumerate(dados_filtrados[1:], 1):
-        status_text.text(f"Processando relatório {idx} de {total}: {valores[0]}")
-        progress_bar.progress(idx / total)
-        
-        doc = DocxTemplate(modelo_path)
-        
-        # Processar imagens com validação
-        imagem1 = processar_imagem(doc, valores[18], dirs)
-        imagem2 = processar_imagem(doc, valores[19], dirs)
-        imagem3 = processar_imagem(doc, valores[20], dirs)
-        imagem4 = processar_imagem(doc, valores[21], dirs)
-        imagem5 = processar_imagem(doc, valores[22], dirs)
-        
-        # Formatar data
-        data_formatada = valores[2]
-        if valores[2] and isinstance(valores[2], str):
+        dados = rows
+
+    total  = len(dados) - 1
+    prog   = st.progress(0)
+    status = st.empty()
+    gerados = []
+
+    for idx, v in enumerate(dados[1:], 1):
+        status.text(f"Processando {idx}/{total}: {v[0]}")
+        prog.progress(idx / total)
+
+        doc  = DocxTemplate(modelo_path)
+        img1 = processar_imagem(doc, v[18], dirs)
+        img2 = processar_imagem(doc, v[19], dirs)
+        img3 = processar_imagem(doc, v[20], dirs)
+        img4 = processar_imagem(doc, v[21], dirs)
+        img5 = processar_imagem(doc, v[22], dirs)
+
+        data_fmt = v[2]
+        if v[2] and isinstance(v[2], str):
             try:
                 from datetime import datetime
-                if 'T' in valores[2]:
-                    dt = datetime.fromisoformat(valores[2].replace('Z', '+00:00'))
-                else:
-                    dt = datetime.strptime(valores[2], '%Y-%m-%d')
-                data_formatada = dt.strftime('%d-%m-%Y')
-            except:
-                data_formatada = valores[2]
-        
+                dt = (datetime.fromisoformat(v[2].replace('Z', '+00:00'))
+                      if 'T' in v[2]
+                      else datetime.strptime(v[2], '%Y-%m-%d'))
+                data_fmt = dt.strftime('%d-%m-%Y')
+            except Exception:
+                pass
+
         doc.render({
-            'possui_placa': valores[9],
-            'plano_trabalho': valores[10],
-            'relatorio': valores[0],
-            'id_proj': valores[5],
-            'id_tipo_rel': valores[8],
-            'meta': valores[25],
-            'data': data_formatada,
-            'processo_sei': valores[6],
-            'cidade': valores[12],
-            'responsavel': valores[27],
-            'lat': valores[13],
-            'long': valores[14],
-            'observacao': valores[23],
-            'tipo_proj': valores[17],
-            'imagem_1': imagem1,
-            'imagem_2': imagem2,
-            'imagem_3': imagem3,
-            'imagem_4': imagem4,
-            'imagem_5': imagem5
+            'possui_placa':  v[9],
+            'plano_trabalho': v[10],
+            'relatorio':     v[0],
+            'id_proj':       v[5],
+            'id_tipo_rel':   v[8],
+            'meta':          v[25],
+            'data':          data_fmt,
+            'processo_sei':  v[6],
+            'cidade':        v[12],
+            'responsavel':   v[27],
+            'lat':           v[13],
+            'long':          v[14],
+            'observacao':    v[23],
+            'tipo_proj':     v[17],
+            'imagem_1':      img1,
+            'imagem_2':      img2,
+            'imagem_3':      img3,
+            'imagem_4':      img4,
+            'imagem_5':      img5,
         })
-        
-        doc_name = os.path.join(dirs['relatorios'], f"{valores[0]}.docx")
-        doc.save(doc_name)
-        relatorios_gerados.append(doc_name)
-    
-    progress_bar.empty()
-    status_text.empty()
-    
-    return relatorios_gerados
+
+        out = os.path.join(dirs['relatorios'], f"{v[0]}.docx")
+        doc.save(out)
+        gerados.append(out)
+
+    prog.empty()
+    status.empty()
+    return gerados
 
 
 def criar_zip(arquivos, zip_path):
-    """Cria um arquivo ZIP com os relatórios"""
-    with zipfile.ZipFile(zip_path, 'w') as zipf:
-        for arquivo in arquivos:
-            zipf.write(arquivo, os.path.basename(arquivo))
+    with zipfile.ZipFile(zip_path, 'w') as zf:
+        for arq in arquivos:
+            zf.write(arq, os.path.basename(arq))
 
 
-# Interface principal
-dirs = criar_diretorios_temp()
+# ═══════════════════════════════════════════════════════════════════════════════
+# Preview / seleção de relatórios
+# ═══════════════════════════════════════════════════════════════════════════════
+indices_selecionados = []
 
-col1, col2 = st.columns(2)
-
-with col1:
-    st.subheader("📄 Modelo do Relatório")
-    modelo_file = st.file_uploader("Upload do modelo DOCX (formulario.docx)", type=['docx'])
-
-with col2:
-    st.subheader("📁 Diretórios de Imagens")
-    
-    local_exists = os.path.exists('C:/arquivos_sepe')
-    
-    if local_exists:
-        st.info("**Imagem padrão:** `C:/sepe/xxx.jpg`")
-        st.info("**Imagens do projeto:** `C:/arquivos_sepe/media/`")
-        
-        if os.path.exists('C:/sepe/xxx.jpg'):
-            st.success("✅ Imagem padrão local encontrada")
-        else:
-            st.info("ℹ️ Usando imagem padrão da internet")
-        
-        if os.path.exists('C:/arquivos_sepe/media'):
-            num_imagens = len([f for f in os.listdir('C:/arquivos_sepe/media') if f.lower().endswith(('.jpg', '.jpeg', '.png'))])
-            st.success(f"✅ Diretório de imagens encontrado ({num_imagens} imagens)")
-        else:
-            st.warning("⚠️ Diretório de imagens não encontrado")
-    else:
-        st.info("**🌐 Modo Cloud**")
-        st.success("✅ Imagem padrão: Internet (depositphotos)")
-        st.success("✅ Imagens do projeto: Download do ODK")
-        st.caption("Marque '✓ Baixar anexos' ao conectar ao ODK")
-
-st.markdown("---")
-
-# Seção de preview e seleção de relatórios
 if csv_file is not None:
     st.subheader("📋 Visualizar e Selecionar Relatórios")
-    
     csv_file.seek(0)
-    csv_text = csv_file.read().decode('utf-8')
-    
-    lines = csv_text.strip().split('\n')
-    
+    lines = csv_file.read().decode('utf-8').strip().split('\n')
+
+    df = pd.DataFrame()
+    header = []
+
     if len(lines) > 1:
-        import csv
-        
-        header_reader = csv.reader([lines[0]])
-        original_cols = next(header_reader)
-        
-        seen = {}
-        unique_cols = []
-        
+        original_cols = next(csv.reader([lines[0]]))
+        seen, unique_cols = {}, []
         for col in original_cols:
             col = col.strip()
             if col not in seen:
@@ -612,182 +583,144 @@ if csv_file is not None:
             else:
                 seen[col] += 1
                 unique_cols.append(f"{col}_dup{seen[col]}")
-        
-        data_reader = csv.reader(lines[1:])
-        data_rows = [row for row in data_reader if row]
-        
+
+        data_rows = [r for r in csv.reader(lines[1:]) if r]
         df = pd.DataFrame(data_rows, columns=unique_cols)
-        
-        final_cols = []
-        for i, col in enumerate(df.columns):
-            if df.columns.tolist().count(col) > 1:
-                final_cols.append(f"{col}_idx{i}")
-            else:
-                final_cols.append(col)
-        
-        df.columns = final_cols
-        
+
+        cols_final = []
+        for i, c in enumerate(df.columns):
+            cols_final.append(
+                f"{c}_idx{i}" if df.columns.tolist().count(c) > 1 else c)
+        df.columns = cols_final
         df.insert(0, '#', range(1, len(df) + 1))
-        
         header = df.columns.tolist()
-        
+
         if len(header) != len(set(header)):
-            st.error(f"🔴 AINDA HÁ DUPLICATAS: {[h for h in header if header.count(h) > 1]}")
+            st.error(f"🔴 Duplicatas: "
+                     f"{[h for h in header if header.count(h) > 1]}")
             st.stop()
-        
-        submission_date_cols = [col for col in df.columns if 'SubmissionDate' in col and not col.endswith(tuple('0123456789'))]
-        if submission_date_cols:
+
+        for col in [c for c in df.columns
+                    if 'SubmissionDate' in c and not c[-1].isdigit()]:
             try:
-                col_name = submission_date_cols[0]
-                df[col_name] = pd.to_datetime(df[col_name], errors='coerce')
-                df[col_name] = df[col_name].dt.strftime('%d-%m-%Y')
-            except:
+                df[col] = (pd.to_datetime(df[col], errors='coerce')
+                           .dt.strftime('%d-%m-%Y'))
+            except Exception:
                 pass
-    
+
     if len(df) > 0:
-        st.info(f"📊 Total de relatórios disponíveis: **{len(df)}**")
-        
+        st.info(f"📊 Total disponível: **{len(df)}** relatórios")
         col_sel1, col_sel2 = st.columns([1, 3])
-        
+
+        def colunas_display(header, df, tipo_proj=False):
+            cols = ['#']
+            buscas = [
+                (['N_mero_ID', 'Numero_ID', 'details-N'], 1),
+                (['Tipo_Relat', 'Tipo_Relatorio'],         None),
+                (['SubmissionDate'],                       3),
+                (['cidade', 'regiao'],                     7),
+                (['processo', 'sei'],                      6),
+            ]
+            for padroes, fallback in buscas:
+                achados = [c for c in header if any(p in c for p in padroes)]
+                if achados:
+                    cols.append(achados[0])
+                elif fallback and len(header) > fallback:
+                    cols.append(header[fallback])
+            if tipo_proj:
+                tp = [c for c in header
+                      if 'tipo' in c.lower() and 'proj' in c.lower()]
+                if tp:
+                    cols.append(tp[0])
+                elif len(header) > 12:
+                    cols.append(header[12])
+            vistos = []
+            for c in cols:
+                if c not in vistos and c in df.columns:
+                    vistos.append(c)
+            return vistos
+
         with col_sel1:
             selecao_tipo = st.radio(
                 "Tipo de seleção:",
                 ["Todos os relatórios", "Selecionar específicos"],
-                key="tipo_selecao"
-            )
-        
+                key="tipo_selecao")
+
         with col_sel2:
-            # Função auxiliar para montar lista de colunas para exibição
-            def montar_colunas_display(header, df, incluir_tipo_proj=False):
-                colunas = ['#']
-
-                id_proj_cols = [c for c in header if 'N_mero_ID' in c or 'Numero_ID' in c or 'details-N' in c]
-                if id_proj_cols:
-                    colunas.append(id_proj_cols[0])
-                elif len(header) > 1:
-                    colunas.append(header[1])
-
-                tipo_relat_cols = [c for c in header if 'Tipo_Relat' in c or 'Tipo_Relatorio' in c]
-                if tipo_relat_cols:
-                    colunas.append(tipo_relat_cols[0])
-
-                submission_cols = [c for c in header if 'SubmissionDate' in c]
-                if submission_cols:
-                    colunas.append(submission_cols[0])
-                elif len(header) > 3:
-                    colunas.append(header[3])
-
-                cidade_cols = [c for c in header if 'cidade' in c.lower() or 'regiao' in c.lower()]
-                if cidade_cols:
-                    colunas.append(cidade_cols[0])
-                elif len(header) > 7:
-                    colunas.append(header[7])
-
-                processo_cols = [c for c in header if 'processo' in c.lower() or 'sei' in c.lower()]
-                if processo_cols:
-                    colunas.append(processo_cols[0])
-                elif len(header) > 6:
-                    colunas.append(header[6])
-
-                if incluir_tipo_proj:
-                    tipo_proj_cols = [c for c in header if 'tipo' in c.lower() and 'proj' in c.lower()]
-                    if tipo_proj_cols:
-                        colunas.append(tipo_proj_cols[0])
-                    elif len(header) > 12:
-                        colunas.append(header[12])
-
-                # Remover duplicatas preservando ordem e garantindo que existem no df
-                vistos = []
-                for c in colunas:
-                    if c not in vistos and c in df.columns:
-                        vistos.append(c)
-                return vistos
-
             if selecao_tipo == "Selecionar específicos":
-                colunas_display_unique = montar_colunas_display(header, df)
-                df_display = df[colunas_display_unique].copy().reset_index(drop=True)
-                st.dataframe(df_display, width="stretch", height=400)
-                
-                numeros_selecionados = st.text_input(
-                    "Digite os números dos relatórios (separados por vírgula):",
-                    placeholder="Ex: 1, 3, 5, 7-10",
-                    help="Você pode usar vírgulas para separar números individuais ou hífen para intervalos"
-                )
-                
-                indices_selecionados = []
-                if numeros_selecionados:
+                df_disp = (df[colunas_display(header, df)]
+                           .copy().reset_index(drop=True))
+                st.dataframe(df_disp, use_container_width=True, height=400)
+                nums = st.text_input(
+                    "Números dos relatórios (ex: 1, 3, 5-10):",
+                    placeholder="1, 3, 5-10")
+                if nums:
                     try:
-                        partes = numeros_selecionados.split(',')
-                        for parte in partes:
+                        for parte in nums.split(','):
                             parte = parte.strip()
                             if '-' in parte:
-                                inicio, fim = map(int, parte.split('-'))
-                                indices_selecionados.extend(range(inicio, fim + 1))
+                                a, b = map(int, parte.split('-'))
+                                indices_selecionados.extend(range(a, b+1))
                             else:
                                 indices_selecionados.append(int(parte))
-                        
                         indices_selecionados = sorted(set(indices_selecionados))
-                        st.success(f"✅ {len(indices_selecionados)} relatórios selecionados: {', '.join(map(str, indices_selecionados))}")
-                    except:
-                        st.error("❌ Formato inválido. Use números separados por vírgula ou intervalos com hífen.")
+                        st.success(
+                            f"✅ {len(indices_selecionados)} selecionados: "
+                            f"{', '.join(map(str, indices_selecionados))}")
+                    except Exception:
+                        st.error("❌ Formato inválido.")
             else:
-                colunas_display_unique = montar_colunas_display(header, df, incluir_tipo_proj=True)
-                df_display = df[colunas_display_unique].copy().reset_index(drop=True)
-                st.dataframe(df_display, width="stretch", height=400)
-                st.caption(f"📊 Mostrando todos os {len(df)} relatórios")
-                indices_selecionados = list(range(1, len(df) + 1))
+                df_disp = (df[colunas_display(header, df, tipo_proj=True)]
+                           .copy().reset_index(drop=True))
+                st.dataframe(df_disp, use_container_width=True, height=400)
+                st.caption(f"📊 Todos os {len(df)} relatórios serão gerados")
+                indices_selecionados = list(range(1, len(df)+1))
     else:
-        st.warning("⚠️ O arquivo CSV está vazio.")
-        indices_selecionados = []
-else:
-    indices_selecionados = []
+        st.warning("⚠️ CSV vazio.")
 
 st.markdown("---")
 
-# Botão de gerar com validação de seleção
-botao_habilitado = csv_file is not None and modelo_file is not None and len(indices_selecionados) > 0
+# ═══════════════════════════════════════════════════════════════════════════════
+# Gerar relatórios
+# ═══════════════════════════════════════════════════════════════════════════════
+habilitado = (csv_file is not None
+              and modelo_file is not None
+              and len(indices_selecionados) > 0)
 
-if not botao_habilitado and csv_file is not None and modelo_file is not None:
-    st.warning("⚠️ Nenhum relatório selecionado. Por favor, selecione ao menos um relatório.")
+if csv_file is not None and modelo_file is not None and not habilitado:
+    st.warning("⚠️ Selecione ao menos um relatório.")
 
-if st.button("🚀 Gerar Relatórios", type="primary", use_container_width=True, disabled=not botao_habilitado):
-    
-    if not csv_file:
-        st.error("❌ Por favor, faça upload do arquivo CSV ou conecte ao ODK Central!")
-    elif not modelo_file:
-        st.error("❌ Por favor, faça upload do modelo DOCX!")
-    else:
-        try:
-            with st.spinner("Processando..."):
-                
-                modelo_path = os.path.join(dirs['modelo'], 'formulario.docx')
-                with open(modelo_path, 'wb') as f:
-                    f.write(modelo_file.getbuffer())
-                
-                st.info("Convertendo CSV para XLSX...")
-                xlsx_path = os.path.join(dirs['xlsx'], 'dados.xlsx')
-                converter_csv_para_xlsx(csv_file, xlsx_path)
-                
-                st.info("Gerando relatórios...")
-                relatorios = processar_relatorios(xlsx_path, modelo_path, dirs, indices_selecionados)
-                
-                zip_path = os.path.join(dirs['base'], 'relatorios.zip')
-                criar_zip(relatorios, zip_path)
-                
-                st.success(f"✅ {len(relatorios)} relatórios gerados com sucesso!")
-                
-                with open(zip_path, 'rb') as f:
-                    st.download_button(
-                        label="📥 Download de Todos os Relatórios DOCX (ZIP)",
-                        data=f,
-                        file_name="relatorios_vistoria.zip",
-                        mime="application/zip",
-                        use_container_width=True
-                    )
-                
-        except Exception as e:
-            st.error(f"❌ Erro ao processar: {str(e)}")
-            st.exception(e)
+if st.button("🚀 Gerar Relatórios", type="primary",
+             use_container_width=True, disabled=not habilitado):
+    try:
+        with st.spinner("Processando..."):
+            modelo_path = os.path.join(dirs['modelo'], 'formulario.docx')
+            Path(modelo_path).write_bytes(modelo_file.getbuffer())
+
+            st.info("Convertendo CSV para XLSX...")
+            xlsx_path = os.path.join(dirs['xlsx'], 'dados.xlsx')
+            converter_csv_para_xlsx(csv_file, xlsx_path)
+
+            st.info("Gerando relatórios...")
+            relatorios = processar_relatorios(
+                xlsx_path, modelo_path, dirs, indices_selecionados)
+
+            zip_path = os.path.join(dirs['base'], 'relatorios.zip')
+            criar_zip(relatorios, zip_path)
+
+            st.success(f"✅ {len(relatorios)} relatórios gerados!")
+            st.download_button(
+                label="📥 Download ZIP com Relatórios DOCX",
+                data=Path(zip_path).read_bytes(),
+                file_name="relatorios_vistoria.zip",
+                mime="application/zip",
+                use_container_width=True,
+                key="btn_download_relatorios",
+            )
+    except Exception as e:
+        st.error(f"❌ Erro: {e}")
+        st.exception(e)
 
 st.markdown("---")
-st.caption("Desenvolvido para SEPE - Sistema de Geração de Relatórios de Vistoria - versão 1.9")
+st.caption("Desenvolvido para SEPE - Sistema de Geração de Relatórios de "
+           "Vistoria - versão 2.0")
