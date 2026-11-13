@@ -11,6 +11,7 @@ import pandas as pd
 import requests
 import platform
 import subprocess
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from requests.auth import HTTPBasicAuth
 from io import StringIO, BytesIO
@@ -53,10 +54,16 @@ with tab1:
                     base_url = (f"{odk_url}/v1/projects/{odk_project_id}"
                                 f"/forms/{odk_form_id}")
                     auth = HTTPBasicAuth(odk_email, odk_password)
+                    # Session reaproveita a conexão (keep-alive) em vez de
+                    # abrir um TCP/TLS novo a cada requests.get -- com ~130
+                    # submissões e várias chamadas por uma (listar anexos +
+                    # baixar cada um) isso sozinho já custava a maior parte
+                    # do tempo gasto em "Verificando anexos no servidor ODK".
+                    sessao = requests.Session()
+                    sessao.auth = auth
 
                     st.info("Buscando dados do formulário...")
-                    response = requests.get(f"{base_url}/submissions.csv.zip",
-                                            auth=auth)
+                    response = sessao.get(f"{base_url}/submissions.csv.zip")
                     response.raise_for_status()
 
                     with ZipFile(io.BytesIO(response.content)) as zf:
@@ -149,26 +156,35 @@ with tab1:
                             st.success(
                                 f"✅ {len(set(id_map.values()))} registros mapeados")
 
-                            subs = requests.get(f"{base_url}/submissions",
-                                                auth=auth)
+                            subs = sessao.get(f"{base_url}/submissions")
                             subs.raise_for_status()
 
                             todos, para_baixar = [], []
                             st.info("🔍 Comparando com arquivos locais...")
 
-                            for sub in subs.json():
+                            # Listar os anexos de cada submissão é uma
+                            # chamada HTTP por submissão -- em sequência,
+                            # 128 submissões = 128 idas e voltas ao servidor
+                            # só para saber os nomes dos arquivos, antes
+                            # mesmo de baixar nada. Em paralelo (threads --
+                            # é I/O, não CPU, então o GIL não é problema),
+                            # o tempo total vira o da requisição mais lenta
+                            # multiplicada por (total / num_workers), não
+                            # pela soma de todas.
+                            def _listar_anexos(sub):
                                 iid     = sub.get('instanceId')
                                 id_proj = id_map.get(iid)
                                 att_url = (f"{base_url}/submissions/"
                                            f"{iid}/attachments")
-                                att_r   = requests.get(att_url, auth=auth)
+                                att_r = sessao.get(att_url)
                                 if att_r.status_code != 200:
-                                    continue
+                                    return []
+                                entradas = []
                                 for att in att_r.json():
                                     nome = att.get('name')
                                     if not nome:
                                         continue
-                                    entrada = {
+                                    entradas.append({
                                         'nome_original':    nome,
                                         'nome_com_prefixo': (
                                             f"foto_{id_proj}_{nome}"
@@ -176,10 +192,15 @@ with tab1:
                                         'attachments_url':  att_url,
                                         'caminho_local':    str(pasta_media / nome),
                                         'caminho_temp':     str(pasta_temp  / nome),
-                                    }
-                                    todos.append(entrada)
-                                    if nome not in arquivos_no_hd:
-                                        para_baixar.append(entrada)
+                                    })
+                                return entradas
+
+                            with ThreadPoolExecutor(max_workers=12) as ex:
+                                for entradas in ex.map(_listar_anexos, subs.json()):
+                                    for entrada in entradas:
+                                        todos.append(entrada)
+                                        if entrada['nome_original'] not in arquivos_no_hd:
+                                            para_baixar.append(entrada)
 
                             total    = len(todos)
                             ja_tem   = total - len(para_baixar)
@@ -201,28 +222,35 @@ with tab1:
                             else:
                                 prog   = st.progress(0)
                                 status = st.empty()
-                                for i, e in enumerate(para_baixar, 1):
-                                    status.text(f"Baixando {i}/{faltando}: "
-                                                f"{e['nome_original']}")
-                                    prog.progress(i / faltando)
-                                    try:
-                                        r = requests.get(
-                                            f"{e['attachments_url']}/"
-                                            f"{e['nome_original']}",
-                                            auth=auth, timeout=30)
-                                        if r.status_code == 200:
-                                            Path(e['caminho_local']).write_bytes(
-                                                r.content)
-                                            if e['caminho_temp'] != e['caminho_local']:
-                                                Path(e['caminho_temp']).write_bytes(
-                                                    r.content)
-                                            baixados_ok += 1
-                                        else:
+
+                                def _baixar_um(e):
+                                    r = sessao.get(
+                                        f"{e['attachments_url']}/"
+                                        f"{e['nome_original']}",
+                                        timeout=30)
+                                    if r.status_code != 200:
+                                        return (e, False, None)
+                                    Path(e['caminho_local']).write_bytes(r.content)
+                                    if e['caminho_temp'] != e['caminho_local']:
+                                        Path(e['caminho_temp']).write_bytes(r.content)
+                                    return (e, True, None)
+
+                                with ThreadPoolExecutor(max_workers=8) as ex:
+                                    futuros = {ex.submit(_baixar_um, e): e
+                                               for e in para_baixar}
+                                    for i, fut in enumerate(as_completed(futuros), 1):
+                                        e = futuros[fut]
+                                        try:
+                                            _, ok, _ = fut.result()
+                                            baixados_ok += 1 if ok else 0
+                                            erros += 0 if ok else 1
+                                        except Exception as ex2:
+                                            st.warning(f"⚠️ {e['nome_original']}: "
+                                                       f"{ex2}")
                                             erros += 1
-                                    except Exception as ex:
-                                        st.warning(f"⚠️ {e['nome_original']}: "
-                                                   f"{ex}")
-                                        erros += 1
+                                        status.text(f"Baixando {i}/{faltando}: "
+                                                    f"{e['nome_original']}")
+                                        prog.progress(i / faltando)
                                 prog.empty()
                                 status.empty()
 
