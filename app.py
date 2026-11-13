@@ -69,34 +69,60 @@ with tab1:
                     st.session_state['csv_bytes']   = csv_content.encode('utf-8')
                     num_linhas = len(csv_content.split('\n')) - 1
 
-                    # Tentar salvar CSV localmente
-                    try:
-                        pasta_sepe = Path('C:/sepe')
-                        pasta_sepe.mkdir(parents=True, exist_ok=True)
-                        csv_local = pasta_sepe / 'dados_odk.csv'
-                        csv_local.write_text(csv_content, encoding='utf-8')
-                        if csv_local.exists() and csv_local.stat().st_size > 0:
-                            st.session_state['csv_pasta_local'] = str(pasta_sepe)
-                            st.success(
-                                f"💾 CSV salvo localmente: {csv_local} "
-                                f"({csv_local.stat().st_size} bytes)")
-                    except Exception:
-                        st.info("ℹ️ App em servidor remoto — "
-                                "use o botão ⬇️ para baixar o CSV.")
+                    # Tentar salvar CSV localmente -- só faz sentido quando o
+                    # app roda no Windows do próprio usuário: "C:/sepe" num
+                    # servidor remoto (Streamlit Cloud é Linux) não dá erro
+                    # nenhum, só cria uma pasta chamada "C:" dentro do
+                    # container -- sem essa checagem a mensagem de sucesso
+                    # aparecia mesmo sem ter gravado nada na máquina do
+                    # usuário.
+                    if platform.system() == 'Windows':
+                        try:
+                            pasta_sepe = Path('C:/sepe')
+                            pasta_sepe.mkdir(parents=True, exist_ok=True)
+                            csv_local = pasta_sepe / 'dados_odk.csv'
+                            csv_local.write_text(csv_content, encoding='utf-8')
+                            if csv_local.exists() and csv_local.stat().st_size > 0:
+                                st.session_state['csv_pasta_local'] = str(pasta_sepe)
+                                st.success(
+                                    f"💾 CSV salvo em {csv_local} "
+                                    f"({csv_local.stat().st_size} bytes)")
+                        except Exception:
+                            st.info("ℹ️ Não consegui gravar em C:/sepe — "
+                                    "use o botão ⬇️ para baixar o CSV.")
+                    else:
+                        st.info("ℹ️ App em servidor remoto — os dados não "
+                                "ficam salvos neste computador. Use o "
+                                "botão ⬇️ para baixar o CSV.")
 
                     # ── Download de anexos ────────────────────────────────────
                     if baixar_anexos:
                         st.info("Verificando anexos no servidor ODK...")
 
-                        pasta_media = Path('C:/sepe/media')
-                        pasta_media.mkdir(parents=True, exist_ok=True)
-                        pasta_temp  = Path(tempfile.gettempdir()) / 'odk_media'
+                        # mesma logica do CSV acima: "C:/sepe/media" só é a
+                        # máquina do usuário quando o app roda local no
+                        # Windows dele -- num servidor remoto isso cria uma
+                        # pasta "C:" dentro do container sem avisar nada, e
+                        # as fotos pareciam gravadas sem estar. pasta_temp
+                        # sempre funciona (é onde o restante do app de fato
+                        # lê os anexos para montar o relatório) e é a única
+                        # usada quando não é Windows local.
+                        rodando_local = platform.system() == 'Windows'
+                        pasta_temp = Path(tempfile.gettempdir()) / 'odk_media'
                         pasta_temp.mkdir(parents=True, exist_ok=True)
+                        pasta_media = Path('C:/sepe/media') if rodando_local else pasta_temp
+                        if rodando_local:
+                            pasta_media.mkdir(parents=True, exist_ok=True)
+                        else:
+                            st.info("ℹ️ App em servidor remoto — as fotos "
+                                    "não ficam salvas neste computador, só "
+                                    "entram no relatório gerado.")
 
                         try:
                             arquivos_no_hd = set(os.listdir(str(pasta_media)))
-                            st.info(f"📂 {len(arquivos_no_hd)} arquivos já "
-                                    f"existem em C:/sepe/media/")
+                            if rodando_local:
+                                st.info(f"📂 {len(arquivos_no_hd)} arquivos já "
+                                        f"existem em C:/sepe/media/")
 
                             # Montar id_map
                             id_map = {}
@@ -166,8 +192,12 @@ with tab1:
                                 f"**{faltando}** para baixar")
 
                             if faltando == 0:
-                                st.success("✅ Todos os anexos já estão "
-                                           "em C:/sepe/media/")
+                                if rodando_local:
+                                    st.success("✅ Todos os anexos já estão "
+                                               "em C:/sepe/media/")
+                                else:
+                                    st.success("✅ Todos os anexos já foram "
+                                               "baixados nesta sessão.")
                             else:
                                 prog   = st.progress(0)
                                 status = st.empty()
@@ -183,8 +213,9 @@ with tab1:
                                         if r.status_code == 200:
                                             Path(e['caminho_local']).write_bytes(
                                                 r.content)
-                                            Path(e['caminho_temp']).write_bytes(
-                                                r.content)
+                                            if e['caminho_temp'] != e['caminho_local']:
+                                                Path(e['caminho_temp']).write_bytes(
+                                                    r.content)
                                             baixados_ok += 1
                                         else:
                                             erros += 1
