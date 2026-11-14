@@ -10,6 +10,7 @@ import sepe_core as core
 
 st.set_page_config(page_title="Gerador de Relatórios SEPE", page_icon="🏗️", layout="wide")
 ss = st.session_state
+POR_PAGINA = 100
 
 
 def segredo(chave: str, padrao: str = "") -> str:
@@ -26,8 +27,10 @@ def carregar(planilha: core.Planilha, fonte: str, *, odk: dict | None = None,
     ss.fonte = fonte
     ss.odk = odk
     ss.midia = midia or {}
-    # fotos ja baixadas e ZIPs prontos sao da carga anterior
+    # fotos ja baixadas, linhas marcadas e ZIPs prontos sao da carga anterior
     ss.fotos = {}
+    ss.marcadas = {}
+    ss.pop("pagina", None)
     ss.pop("zip_relatorios", None)
     ss.pop("zip_fotos", None)
 
@@ -204,23 +207,54 @@ tabela["Data"] = tabela["Data"].map(core.formatar_data)
 tabela["Cidade"] = tabela["Cidade"].map(core.texto_de_escolha)
 
 modo = st.radio("Quais relatórios gerar?", ["Todos", "Escolher"], horizontal=True)
-evento = st.dataframe(
-    tabela, hide_index=True, use_container_width=True, height=380,
-    on_select="rerun" if modo == "Escolher" else "ignore",
-    selection_mode="multi-row", key="tabela_registros",
+
+total = len(planilha.linhas)
+paginas = max(1, -(-total // POR_PAGINA))
+rotulos = {p: f"{(p - 1) * POR_PAGINA + 1}–{min(p * POR_PAGINA, total)}"
+           for p in range(1, paginas + 1)}
+if paginas > 1:
+    pagina = st.radio(f"Página ({POR_PAGINA} por página)", list(rotulos),
+                      format_func=rotulos.get, horizontal=True, key="pagina")
+else:
+    pagina = 1
+inicio = (pagina - 1) * POR_PAGINA
+
+# A selecao de cada pagina fica guardada aqui: a tabela de uma pagina que nao
+# esta na tela deixa de existir, e com ela as linhas marcadas nela.
+marcadas: dict[int, set[int]] = ss.setdefault("marcadas", {})
+
+
+def _guardar_marcadas(pag: int = pagina, ini: int = inicio) -> None:
+    linhas = ss[f"tabela_{pag}"].selection.rows
+    marcadas[pag] = {ini + r for r in linhas}
+
+
+st.dataframe(
+    tabela.iloc[inicio:inicio + POR_PAGINA], hide_index=True, use_container_width=True,
+    height=380, selection_mode="multi-row", key=f"tabela_{pagina}",
+    on_select=_guardar_marcadas if modo == "Escolher" else "ignore",
 )
 
 if modo == "Todos":
-    posicoes = list(range(len(planilha.linhas)))
+    posicoes = list(range(total))
 else:
-    st.caption("Marque as linhas na tabela acima, ou digite os números da coluna #.")
+    st.caption("Marque as linhas na tabela (em qualquer página), ou digite os números da coluna #.")
     digitado = st.text_input("Números (ex: 1, 3, 5-10)", key="faixa")
+    na_tabela = set().union(*marcadas.values())
     try:
-        posicoes = set(evento.selection.rows) | faixa(digitado, len(planilha.linhas))
+        posicoes = na_tabela | faixa(digitado, total)
     except ValueError:
         st.error("Formato inválido -- use números separados por vírgula e faixas como 5-10.")
-        posicoes = set(evento.selection.rows)
+        posicoes = na_tabela
     posicoes = sorted(posicoes)
+    if na_tabela:
+        c1, c2 = st.columns([4, 1])
+        c1.caption("Marcados na tabela: " + ", ".join(str(p + 1) for p in sorted(na_tabela)))
+        if c2.button("Limpar marcados", use_container_width=True):
+            marcadas.clear()
+            for p in range(1, paginas + 1):
+                ss.pop(f"tabela_{p}", None)
+            st.rerun()
 st.caption(f"**{len(posicoes)}** relatório(s) selecionado(s).")
 
 # ── Modelo e geração ───────────────────────────────────────────────────────
