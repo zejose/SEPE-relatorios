@@ -224,14 +224,22 @@ else:
 st.caption(f"**{len(posicoes)}** relatório(s) selecionado(s).")
 
 # ── Modelo e geração ───────────────────────────────────────────────────────
-st.subheader("📄 Modelos do relatório")
-st.caption("Cada registro usa o modelo do seu tipo de vistoria. Os dois já vêm no app; "
-           "envie outro DOCX só se quiser trocar.")
+st.subheader("📄 Modelo do relatório")
+AUTOMATICO = "Automático — pelo tipo de vistoria de cada registro"
+opcoes_modelo = {AUTOMATICO: None, **{f"{t.capitalize()} para todos": t for t in core.MODELOS}}
+escolha_modelo = opcoes_modelo[st.radio("Qual modelo usar?", list(opcoes_modelo), key="escolha_modelo")]
+
+
+def modelo_de(posicao: int) -> str:
+    return escolha_modelo or core.tipo_de_vistoria(planilha, posicao)
+
+
+st.caption("Os dois modelos já vêm no app; envie outro DOCX só se quiser trocar o layout.")
 modelos: dict[str, bytes] = {}
 for tipo, coluna in zip(core.MODELOS, st.columns(len(core.MODELOS))):
     with coluna:
-        qtd = sum(1 for p in posicoes if core.tipo_de_vistoria(planilha, p) == tipo)
-        st.markdown(f"**{tipo.capitalize()}** — {qtd} selecionado(s)")
+        qtd = sum(1 for p in posicoes if modelo_de(p) == tipo)
+        st.markdown(f"**{tipo.capitalize()}** — usado em {qtd} relatório(s)")
         enviado = st.file_uploader(f"Trocar modelo ({tipo})", type=["docx"], key=f"modelo_{tipo}",
                                    label_visibility="collapsed")
         if enviado:
@@ -245,8 +253,11 @@ for tipo, coluna in zip(core.MODELOS, st.columns(len(core.MODELOS))):
 c1, c2 = st.columns(2)
 gerar = c1.button(f"🚀 Gerar {len(posicoes)} relatório(s)", type="primary",
                   use_container_width=True, disabled=not posicoes)
-juntar_fotos = c2.button("📦 Preparar ZIP com as fotos originais", use_container_width=True,
-                         disabled=not posicoes)
+juntar_fotos = c2.button(
+    "📦 Preparar ZIP com as fotos originais", use_container_width=True, disabled=not posicoes,
+    help="Só as fotos dos registros selecionados, em tamanho original (como saíram do "
+         "celular), num ZIP à parte -- para arquivar ou anexar no SEI. Nos relatórios as "
+         "fotos vão reduzidas.")
 
 if gerar:
     try:
@@ -256,7 +267,7 @@ if gerar:
         # DOCX ja e ZIP comprimido; comprimir de novo so gasta CPU
         with zipfile.ZipFile(buf, "w", zipfile.ZIP_STORED) as zf:
             for i, p in enumerate(posicoes, 1):
-                modelo = modelos[core.tipo_de_vistoria(planilha, p)]
+                modelo = modelos[modelo_de(p)]
                 zf.writestr(core.nome_arquivo(planilha, p),
                             core.gerar_docx(modelo, planilha, p, ss.fotos))
                 barra.progress(i / len(posicoes), text=f"Relatórios: {i}/{len(posicoes)}")

@@ -62,6 +62,8 @@ IMAGENS = (
     "details-Foto_4",
 )
 COLUNAS_INSTANCIA = ("KEY", "meta-instanceID", "instanceID")
+# data/hora de envio ao servidor, ISO 8601 -- ordena como texto
+COLUNA_ENVIO = "SubmissionDate"
 
 # Foto de celular chega com 4000 px e 4 MB; sem reduzir cada relatorio
 # passava de 20 MB e estourava a memoria do Streamlit Cloud (1 GB) em poucas
@@ -112,6 +114,12 @@ def ler_csv(texto: str) -> Planilha:
         return Planilha(texto, [], [])
     cabecalho = [c.strip() for c in registros[0]]
     linhas = [r for r in registros[1:] if any(c.strip() for c in r)]
+    # o ODK exporta do mais novo para o mais antigo; o relatorio 1 tem de ser
+    # o mais antigo -- e assim registro novo entra no fim, sem renumerar os
+    # que ja existiam
+    if COLUNA_ENVIO in cabecalho:
+        i = cabecalho.index(COLUNA_ENVIO)
+        linhas.sort(key=lambda r: r[i] if i < len(r) else "")
     return Planilha(texto, cabecalho, linhas)
 
 
