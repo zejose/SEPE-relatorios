@@ -24,21 +24,28 @@ Cada `git push` na `main` atualiza o app sozinho.
 - **Arquivo exportado**: envie o ZIP exportado pelo ODK Central (CSV +
   pasta `media`) — gera com as fotos sem precisar de senha. Só o CSV também
   funciona, mas os relatórios saem sem foto.
-- Escolha os registros (todos, marcando na tabela ou digitando `1, 3, 5-10`),
-  envie o modelo DOCX e clique em *Gerar*.
+- Escolha os registros (todos, marcando na tabela ou digitando `1, 3, 5-10`)
+  e clique em *Gerar*. Cada arquivo sai como `<#>_ID<id>.docx` (o # é o da
+  coluna da tabela).
 
-O número do relatório é o mesmo da coluna # da tabela (o 1º registro é o
-relatório 1).
+## Modelo
 
-## Campos do modelo
+O app já vem com o modelo do Relatório de Visita — Programa Adote uma
+Praça (`modelos/relatorio_visita_adote_uma_praca.docx`, formulário
+"Vistoria - Adote uma Praça - SEPE", projeto 4). Para mudar o layout, baixe
+o modelo pelo botão do app, edite no Word mantendo os campos `{{ ... }}`, e
+envie no app (vale só para aquela geração) ou substitua o arquivo em
+`modelos/`.
 
-`relatorio`, `data`, `id_proj`, `processo_sei`, `id_tipo_rel`,
-`possui_placa`, `plano_trabalho`, `cidade`, `lat`, `long`, `tipo_proj`,
-`observacao`, `meta`, `responsavel`, `imagem_1` a `imagem_5`.
+Campos disponíveis: `id_proj`, `data`, `processo_sei`, `id_tipo_rel`,
+`responsavel`, `cidade`, `lat`, `long`, `observacao`, `adotante`,
+`possui_placa`, `plano_trabalho`, `obs_plano_trabalho`, `tipo_proj`, `meta`,
+`relatorio` (o # da tabela), `imagem_1` (croqui/planta de localização) e
+`imagem_2` a `imagem_5` (Foto 1 a 4).
 
-Cada campo vem de uma posição fixa do CSV do ODK — ver as constantes
-`COL_*` no topo de `sepe_core.py`, que é o único lugar a mudar se o
-formulário mudar de ordem.
+Cada campo vem de uma coluna do CSV do ODK pelo nome (dicionário `CAMPOS`
+no topo de `sepe_core.py`) — se o formulário mudar o nome de um campo, é só
+ali.
 
 ## Rodar local
 

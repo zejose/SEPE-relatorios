@@ -12,6 +12,7 @@ import zipfile
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from datetime import datetime
+from pathlib import Path
 from typing import Iterable, Iterator
 
 import requests
@@ -19,31 +20,48 @@ from docx.shared import Cm
 from docxtpl import DocxTemplate, InlineImage
 from PIL import Image, ImageDraw, ImageOps
 
-# Posicao de cada campo no CSV exportado pelo ODK (0 = primeira coluna). O
-# modelo DOCX depende dessa ordem; se o formulario mudar, e so aqui.
-COL_DATA = 1
-COL_ID_PROJ = 4
-COL_PROCESSO_SEI = 5
-COL_TIPO_REL = 7
-COL_POSSUI_PLACA = 8
-COL_PLANO_TRABALHO = 9
-COL_CIDADE = 11
-COL_LAT = 12
-COL_LONG = 13
-COL_TIPO_PROJ = 16
-COLS_IMAGENS = (17, 18, 19, 20, 21)
-COL_OBSERVACAO = 22
-COL_META = 24
-COL_RESPONSAVEL = 26
+MODELO_PADRAO = Path(__file__).parent / "modelos" / "relatorio_visita_adote_uma_praca.docx"
 
+# Campo do modelo DOCX -> coluna do CSV do formulario "Vistoria - Adote uma
+# Praca - SEPE" (projeto 4). Por nome, e nao por posicao: campo novo no
+# formulario desloca as colunas, e o relatorio saia com dado trocado.
+CAMPOS = {
+    "data": "today",
+    "id_proj": "details-N_mero_ID",
+    "processo_sei": "details-Processo_sei",
+    "adotante": "details-Nome_do_adotante",
+    "id_tipo_rel": "details-Tipo_Relat_rio",
+    "possui_placa": "details-placa",
+    "plano_trabalho": "details-Cumprindo_plano_de_trabalho",
+    "obs_plano_trabalho": "details-Observa_o_Plano_de_Trabalho",
+    "cidade": "details-regiao_adm",
+    "lat": "details-location-Latitude",
+    "long": "details-location-Longitude",
+    "tipo_proj": "details-Tipo_de_Projeto",
+    "observacao": "Observa_es",
+    "meta": "meta-instanceID",
+    "responsavel": "SubmitterName",
+}
+# imagem_1 e o croqui (planta de localizacao), imagem_2 a imagem_5 as fotos
+IMAGENS = (
+    "details-Planta_de_Localizacao",
+    "details-Foto_1",
+    "details-Foto_2",
+    "details-Foto_3",
+    "details-Foto_4",
+)
 COLUNAS_INSTANCIA = ("KEY", "meta-instanceID", "instanceID")
 
-# 12 cm de largura no DOCX a ~300 dpi; foto de celular chega com 4000 px e
-# 4 MB, e sem reduzir cada relatorio passava de 20 MB e estourava a memoria
-# do Streamlit Cloud (1 GB) em poucas dezenas de relatorios.
-LADO_MAX_FOTO = 1400
-QUALIDADE_JPEG = 82
-LARGURA_FOTO_CM = 12
+# Foto de celular chega com 4000 px e 4 MB; sem reduzir cada relatorio
+# passava de 20 MB e estourava a memoria do Streamlit Cloud (1 GB) em poucas
+# dezenas de relatorios. 1280 px ainda e ~230 dpi no tamanho impresso.
+LADO_MAX_FOTO = 1280
+QUALIDADE_JPEG = 80
+# o espaco de cada foto no modelo (o croqui la tem 14,5 x 9,5 cm); foto em pe
+# e limitada pela altura -- com 10 cm o croqui ja nao cabia abaixo do titulo
+# e pulava de pagina, deixando meia pagina em branco
+FOTO_MAX_LARGURA_CM = 14.0
+FOTO_MAX_ALTURA_CM = 9.0
 LARGURA_SEM_FOTO_CM = 3
 
 TIMEOUT = 60
@@ -54,7 +72,25 @@ class Planilha:
     texto: str
     cabecalho: list[str]
     linhas: list[list[str]]
-    col_instancia: int | None
+
+    def __post_init__(self) -> None:
+        self._indice = {nome: i for i, nome in reversed(list(enumerate(self.cabecalho)))}
+        self.col_instancia = next(
+            (self._indice[c] for c in COLUNAS_INSTANCIA if c in self._indice), None
+        )
+
+    def valor(self, posicao: int, coluna: str) -> str:
+        i = self._indice.get(coluna)
+        linha = self.linhas[posicao]
+        return linha[i].strip() if i is not None and i < len(linha) else ""
+
+    def instancia(self, posicao: int) -> str:
+        i = self.col_instancia
+        linha = self.linhas[posicao]
+        return linha[i].strip() if i is not None and i < len(linha) else ""
+
+    def colunas_faltando(self) -> list[str]:
+        return [c for c in (*CAMPOS.values(), *IMAGENS) if c not in self._indice]
 
 
 def ler_csv(texto: str) -> Planilha:
@@ -62,19 +98,10 @@ def ler_csv(texto: str) -> Planilha:
     # quebra de linha vem entre aspas e ocupa mais de uma linha do arquivo
     registros = list(csv.reader(io.StringIO(texto)))
     if not registros:
-        return Planilha(texto, [], [], None)
+        return Planilha(texto, [], [])
     cabecalho = [c.strip() for c in registros[0]]
     linhas = [r for r in registros[1:] if any(c.strip() for c in r)]
-    col_instancia = next(
-        (cabecalho.index(c) for c in COLUNAS_INSTANCIA if c in cabecalho), None
-    )
-    return Planilha(texto, cabecalho, linhas, col_instancia)
-
-
-def campo(linha: list[str], indice: int | None) -> str:
-    if indice is None or indice >= len(linha):
-        return ""
-    return linha[indice].strip()
+    return Planilha(texto, cabecalho, linhas)
 
 
 def ler_zip_odk(conteudo: bytes) -> tuple[str, dict[str, bytes]]:
@@ -187,7 +214,23 @@ def formatar_data(valor: str) -> str:
             dt = datetime.fromisoformat(valor.replace("Z", "+00:00"))
         else:
             dt = datetime.strptime(valor[:10], "%Y-%m-%d")
-        return dt.strftime("%d-%m-%Y")
+        return dt.strftime("%d/%m/%Y")
+    except ValueError:
+        return valor
+
+
+# perguntas de multipla escolha: o ODK grava o "name" da opcao, sem espaco
+# ("Plano_Piloto", "Sao_Sebastiao")
+CAMPOS_DE_ESCOLHA = ("cidade", "id_tipo_rel", "tipo_proj", "possui_placa", "plano_trabalho")
+
+
+def texto_de_escolha(valor: str) -> str:
+    return valor.replace("_", " ")
+
+
+def formatar_coordenada(valor: str) -> str:
+    try:
+        return f"{float(valor):.6f}"
     except ValueError:
         return valor
 
@@ -198,49 +241,55 @@ def numero_relatorio(posicao: int) -> int:
     return posicao + 1
 
 
+def nome_arquivo(planilha: Planilha, posicao: int) -> str:
+    """'<#>_ID<id>.docx' -- o # mantem a ordem da tabela e o ID diz de qual
+    projeto e sem precisar abrir."""
+    id_proj = "".join(c for c in planilha.valor(posicao, CAMPOS["id_proj"]) if c.isalnum())
+    sufixo = f"_ID{id_proj}" if id_proj else ""
+    return f"{numero_relatorio(posicao)}{sufixo}.docx"
+
+
 def pedidos_de_fotos(planilha: Planilha, posicoes: Iterable[int]) -> set[tuple[str, str]]:
     pedidos = set()
     for p in posicoes:
-        linha = planilha.linhas[p]
-        instancia = campo(linha, planilha.col_instancia)
-        for c in COLS_IMAGENS:
-            nome = campo(linha, c)
+        instancia = planilha.instancia(p)
+        for coluna in IMAGENS:
+            nome = planilha.valor(p, coluna)
             if nome:
                 pedidos.add((instancia, nome))
     return pedidos
 
 
+def _tamanho_foto(foto: bytes) -> dict:
+    """Largura OU altura (o que limitar primeiro) para caber no espaco do modelo."""
+    with Image.open(io.BytesIO(foto)) as img:
+        largura, altura = img.size
+    if largura / altura >= FOTO_MAX_LARGURA_CM / FOTO_MAX_ALTURA_CM:
+        return {"width": Cm(FOTO_MAX_LARGURA_CM)}
+    return {"height": Cm(FOTO_MAX_ALTURA_CM)}
+
+
 def gerar_docx(
     modelo: bytes, planilha: Planilha, posicao: int, fotos: dict[tuple[str, str], bytes | None]
 ) -> bytes:
-    linha = planilha.linhas[posicao]
-    instancia = campo(linha, planilha.col_instancia)
+    instancia = planilha.instancia(posicao)
     doc = DocxTemplate(io.BytesIO(modelo))
 
-    def imagem(coluna: int) -> InlineImage:
-        nome = campo(linha, coluna)
+    def imagem(coluna: str) -> InlineImage:
+        nome = planilha.valor(posicao, coluna)
         foto = fotos.get((instancia, nome)) if nome else None
         if foto:
-            return InlineImage(doc, io.BytesIO(foto), Cm(LARGURA_FOTO_CM))
+            return InlineImage(doc, io.BytesIO(foto), **_tamanho_foto(foto))
         return InlineImage(doc, io.BytesIO(foto_padrao()), Cm(LARGURA_SEM_FOTO_CM))
 
-    contexto = {
-        "relatorio": numero_relatorio(posicao),
-        "data": formatar_data(campo(linha, COL_DATA)),
-        "id_proj": campo(linha, COL_ID_PROJ),
-        "processo_sei": campo(linha, COL_PROCESSO_SEI),
-        "id_tipo_rel": campo(linha, COL_TIPO_REL),
-        "possui_placa": campo(linha, COL_POSSUI_PLACA),
-        "plano_trabalho": campo(linha, COL_PLANO_TRABALHO),
-        "cidade": campo(linha, COL_CIDADE),
-        "lat": campo(linha, COL_LAT),
-        "long": campo(linha, COL_LONG),
-        "tipo_proj": campo(linha, COL_TIPO_PROJ),
-        "observacao": campo(linha, COL_OBSERVACAO),
-        "meta": campo(linha, COL_META),
-        "responsavel": campo(linha, COL_RESPONSAVEL),
-    }
-    for i, coluna in enumerate(COLS_IMAGENS, 1):
+    contexto = {campo: planilha.valor(posicao, coluna) for campo, coluna in CAMPOS.items()}
+    for campo in CAMPOS_DE_ESCOLHA:
+        contexto[campo] = texto_de_escolha(contexto[campo])
+    contexto["relatorio"] = numero_relatorio(posicao)
+    contexto["data"] = formatar_data(contexto["data"])
+    contexto["lat"] = formatar_coordenada(contexto["lat"])
+    contexto["long"] = formatar_coordenada(contexto["long"])
+    for i, coluna in enumerate(IMAGENS, 1):
         contexto[f"imagem_{i}"] = imagem(coluna)
 
     doc.render(contexto)

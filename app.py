@@ -79,11 +79,10 @@ def zip_fotos_originais(posicoes: list[int]) -> bytes:
     planilha: core.Planilha = ss.planilha
     nomes_zip = {}
     for p in posicoes:
-        linha = planilha.linhas[p]
-        instancia = core.campo(linha, planilha.col_instancia)
-        id_proj = core.campo(linha, core.COL_ID_PROJ)
-        for c in core.COLS_IMAGENS:
-            nome = core.campo(linha, c)
+        instancia = planilha.instancia(p)
+        id_proj = planilha.valor(p, core.CAMPOS["id_proj"])
+        for coluna in core.IMAGENS:
+            nome = planilha.valor(p, coluna)
             if nome:
                 nomes_zip[(instancia, nome)] = f"foto_{id_proj}_{nome}" if id_proj else f"foto_{nome}"
 
@@ -183,20 +182,26 @@ c2.download_button("⬇️ Baixar CSV", planilha.texto.encode("utf-8"), "dados_o
                    "text/csv", use_container_width=True)
 if ss.fonte == "odk" and planilha.col_instancia is None:
     st.warning("O CSV não tem a coluna KEY/meta-instanceID -- não dá para buscar as fotos.")
+faltando = planilha.colunas_faltando()
+if faltando:
+    st.warning("Este CSV não tem as colunas " + ", ".join(faltando) + " -- esses campos "
+               "saem em branco no relatório. É o formulário 'Vistoria - Adote uma Praça'?")
 
 # ── Escolha dos registros ──────────────────────────────────────────────────
 st.subheader("📋 Registros")
-colunas = [core.COL_ID_PROJ, core.COL_TIPO_REL, core.COL_DATA, core.COL_CIDADE,
-           core.COL_PROCESSO_SEI, core.COL_TIPO_PROJ]
-nomes = []
-for c in colunas:
-    nome = planilha.cabecalho[c] if c < len(planilha.cabecalho) else f"coluna {c + 1}"
-    nomes.append(nome if nome not in nomes else f"{nome} ({c + 1})")
+colunas_tabela = {
+    "ID": "id_proj", "Adotante": "adotante", "Tipo": "id_tipo_rel", "Data": "data",
+    "Cidade": "cidade", "Processo SEI": "processo_sei", "Responsável": "responsavel",
+}
 tabela = pd.DataFrame(
-    [[i + 1] + [core.campo(l, c) for c in colunas] for i, l in enumerate(planilha.linhas)],
-    columns=["#"] + nomes,
+    [
+        [i + 1] + [planilha.valor(i, core.CAMPOS[c]) for c in colunas_tabela.values()]
+        for i in range(len(planilha.linhas))
+    ],
+    columns=["#", *colunas_tabela],
 )
-tabela[nomes[2]] = tabela[nomes[2]].map(core.formatar_data)
+tabela["Data"] = tabela["Data"].map(core.formatar_data)
+tabela["Cidade"] = tabela["Cidade"].map(core.texto_de_escolha)
 
 modo = st.radio("Quais relatórios gerar?", ["Todos", "Escolher"], horizontal=True)
 evento = st.dataframe(
@@ -220,26 +225,32 @@ st.caption(f"**{len(posicoes)}** relatório(s) selecionado(s).")
 
 # ── Modelo e geração ───────────────────────────────────────────────────────
 st.subheader("📄 Modelo do relatório")
-modelo = st.file_uploader("Modelo DOCX (formulario.docx)", type=["docx"])
+outro_modelo = st.file_uploader(
+    "Já vem com o modelo do Relatório de Visita (Adote uma Praça). Envie outro DOCX "
+    "só se quiser trocar.", type=["docx"])
+if outro_modelo:
+    modelo_bytes = outro_modelo.getvalue()
+    st.caption(f"Usando o modelo enviado: **{outro_modelo.name}**")
+else:
+    modelo_bytes = core.MODELO_PADRAO.read_bytes()
+    st.download_button("⬇️ Baixar o modelo atual (para editar no Word)", modelo_bytes,
+                       core.MODELO_PADRAO.name)
 
 c1, c2 = st.columns(2)
 gerar = c1.button(f"🚀 Gerar {len(posicoes)} relatório(s)", type="primary",
-                  use_container_width=True, disabled=not (modelo and posicoes))
+                  use_container_width=True, disabled=not posicoes)
 juntar_fotos = c2.button("📦 Preparar ZIP com as fotos originais", use_container_width=True,
                          disabled=not posicoes)
-if not modelo:
-    c1.caption("Envie o modelo DOCX para habilitar.")
 
 if gerar:
     try:
         achadas, faltando = garantir_fotos(posicoes)
-        modelo_bytes = modelo.getvalue()
         buf = io.BytesIO()
         barra = st.progress(0.0, text="Gerando relatórios...")
         # DOCX ja e ZIP comprimido; comprimir de novo so gasta CPU
         with zipfile.ZipFile(buf, "w", zipfile.ZIP_STORED) as zf:
             for i, p in enumerate(posicoes, 1):
-                zf.writestr(f"{core.numero_relatorio(p)}.docx",
+                zf.writestr(core.nome_arquivo(planilha, p),
                             core.gerar_docx(modelo_bytes, planilha, p, ss.fotos))
                 barra.progress(i / len(posicoes), text=f"Relatórios: {i}/{len(posicoes)}")
         barra.empty()
