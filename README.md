@@ -45,7 +45,7 @@ espaço: dentro de uma célula de tabela, à largura da célula; fora, até
 14 × 9 cm.
 
 Campos disponíveis: `id_proj`, `data`, `processo_sei`, `id_tipo_rel`,
-`responsavel`, `cidade`, `lat`, `long`, `observacao`, `adotante`,
+`responsavel`, `cidade`, `lat`, `long`, `observacao` (a geral e, na linha de baixo, "Plano de trabalho: ..." quando houver), `adotante`,
 `possui_placa`, `plano_trabalho`, `obs_plano_trabalho`, `tipo_proj`, `meta`,
 `relatorio` (o # da tabela), `imagem_1` (croqui/planta de localização) e
 `imagem_2` a `imagem_5` (Foto 1 a 4).

@@ -21,7 +21,7 @@ import requests
 from docx import Document
 from docx.oxml.ns import qn
 from docx.shared import Cm
-from docxtpl import DocxTemplate, InlineImage
+from docxtpl import DocxTemplate, InlineImage, Listing
 from PIL import Image, ImageDraw, ImageFont, ImageOps
 
 # um modelo por tipo de vistoria (campo "Tipo Relatorio" do formulario): o de
@@ -246,6 +246,16 @@ def tipo_de_vistoria(planilha: Planilha, posicao: int) -> str:
     return tipo if tipo in MODELOS else TIPO_PADRAO
 
 
+def observacao_completa(geral: str, plano: str) -> Listing:
+    """Observacao geral e, abaixo, a do plano de trabalho (so o acompanhamento
+    pergunta) -- no mesmo campo do modelo. Listing mantem as quebras de linha,
+    que como texto simples viravam espaco no Word."""
+    partes = [geral] if geral else []
+    if plano:
+        partes.append(f"Plano de trabalho: {plano}")
+    return Listing("\n".join(partes))
+
+
 def formatar_coordenada(valor: str) -> str:
     try:
         return f"{float(valor):.6f}"
@@ -350,13 +360,18 @@ def gerar_docx(
     for campo in CAMPOS_DE_ESCOLHA:
         contexto[campo] = texto_de_escolha(contexto[campo])
     contexto["relatorio"] = numero_relatorio(posicao)
+    contexto["observacao"] = observacao_completa(
+        contexto["observacao"], contexto["obs_plano_trabalho"]
+    )
     contexto["data"] = formatar_data(contexto["data"])
     contexto["lat"] = formatar_coordenada(contexto["lat"])
     contexto["long"] = formatar_coordenada(contexto["long"])
     for i, coluna in enumerate(IMAGENS, 1):
         contexto[f"imagem_{i}"] = imagem(i, coluna)
 
-    doc.render(contexto)
+    # autoescape: observacao digitada com "&" ou "<" ia crua para o XML do
+    # DOCX e o Word recusava abrir o arquivo
+    doc.render(contexto, autoescape=True)
     saida = io.BytesIO()
     doc.save(saida)
     return saida.getvalue()
