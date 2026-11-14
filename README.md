@@ -28,14 +28,21 @@ Cada `git push` na `main` atualiza o app sozinho.
   e clique em *Gerar*. Cada arquivo sai como `<#>_ID<id>.docx` (o # é o da
   coluna da tabela).
 
-## Modelo
+## Modelos
 
-O app já vem com o modelo do Relatório de Visita — Programa Adote uma
-Praça (`modelos/relatorio_visita_adote_uma_praca.docx`, formulário
-"Vistoria - Adote uma Praça - SEPE", projeto 4). Para mudar o layout, baixe
-o modelo pelo botão do app, edite no Word mantendo os campos `{{ ... }}`, e
-envie no app (vale só para aquela geração) ou substitua o arquivo em
-`modelos/`.
+O app já vem com os dois modelos do Relatório de Visita — Programa Adote
+uma Praça (formulário "Vistoria - Adote uma Praça - SEPE", projeto 4), e
+cada registro usa o do seu "Tipo Relatório":
+
+- `modelos/relatorio_visita_inicial.docx` — vistoria inicial
+- `modelos/relatorio_visita_acompanhamento.docx` — acompanhamento (tem
+  placa e plano de trabalho)
+
+Para mudar o layout, baixe o modelo pelo botão do app, edite no Word
+mantendo os campos `{{ ... }}`, e envie no app (vale só para aquela geração)
+ou substitua o arquivo em `modelos/`. As fotos se ajustam sozinhas ao
+espaço: dentro de uma célula de tabela, à largura da célula; fora, até
+14 × 9 cm.
 
 Campos disponíveis: `id_proj`, `data`, `processo_sei`, `id_tipo_rel`,
 `responsavel`, `cidade`, `lat`, `long`, `observacao`, `adotante`,

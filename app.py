@@ -224,17 +224,23 @@ else:
 st.caption(f"**{len(posicoes)}** relatório(s) selecionado(s).")
 
 # ── Modelo e geração ───────────────────────────────────────────────────────
-st.subheader("📄 Modelo do relatório")
-outro_modelo = st.file_uploader(
-    "Já vem com o modelo do Relatório de Visita (Adote uma Praça). Envie outro DOCX "
-    "só se quiser trocar.", type=["docx"])
-if outro_modelo:
-    modelo_bytes = outro_modelo.getvalue()
-    st.caption(f"Usando o modelo enviado: **{outro_modelo.name}**")
-else:
-    modelo_bytes = core.MODELO_PADRAO.read_bytes()
-    st.download_button("⬇️ Baixar o modelo atual (para editar no Word)", modelo_bytes,
-                       core.MODELO_PADRAO.name)
+st.subheader("📄 Modelos do relatório")
+st.caption("Cada registro usa o modelo do seu tipo de vistoria. Os dois já vêm no app; "
+           "envie outro DOCX só se quiser trocar.")
+modelos: dict[str, bytes] = {}
+for tipo, coluna in zip(core.MODELOS, st.columns(len(core.MODELOS))):
+    with coluna:
+        qtd = sum(1 for p in posicoes if core.tipo_de_vistoria(planilha, p) == tipo)
+        st.markdown(f"**{tipo.capitalize()}** — {qtd} selecionado(s)")
+        enviado = st.file_uploader(f"Trocar modelo ({tipo})", type=["docx"], key=f"modelo_{tipo}",
+                                   label_visibility="collapsed")
+        if enviado:
+            modelos[tipo] = enviado.getvalue()
+            st.caption(f"Usando o enviado: **{enviado.name}**")
+        else:
+            modelos[tipo] = core.MODELOS[tipo].read_bytes()
+            st.download_button("⬇️ Baixar modelo atual", modelos[tipo], core.MODELOS[tipo].name,
+                               key=f"baixar_modelo_{tipo}")
 
 c1, c2 = st.columns(2)
 gerar = c1.button(f"🚀 Gerar {len(posicoes)} relatório(s)", type="primary",
@@ -250,8 +256,9 @@ if gerar:
         # DOCX ja e ZIP comprimido; comprimir de novo so gasta CPU
         with zipfile.ZipFile(buf, "w", zipfile.ZIP_STORED) as zf:
             for i, p in enumerate(posicoes, 1):
+                modelo = modelos[core.tipo_de_vistoria(planilha, p)]
                 zf.writestr(core.nome_arquivo(planilha, p),
-                            core.gerar_docx(modelo_bytes, planilha, p, ss.fotos))
+                            core.gerar_docx(modelo, planilha, p, ss.fotos))
                 barra.progress(i / len(posicoes), text=f"Relatórios: {i}/{len(posicoes)}")
         barra.empty()
         ss.zip_relatorios = buf.getvalue()

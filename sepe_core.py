@@ -8,19 +8,30 @@ from __future__ import annotations
 
 import csv
 import io
+import re
 import zipfile
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from datetime import datetime
+from functools import lru_cache
 from pathlib import Path
 from typing import Iterable, Iterator
 
 import requests
+from docx import Document
+from docx.oxml.ns import qn
 from docx.shared import Cm
 from docxtpl import DocxTemplate, InlineImage
-from PIL import Image, ImageDraw, ImageOps
+from PIL import Image, ImageDraw, ImageFont, ImageOps
 
-MODELO_PADRAO = Path(__file__).parent / "modelos" / "relatorio_visita_adote_uma_praca.docx"
+# um modelo por tipo de vistoria (campo "Tipo Relatorio" do formulario): o de
+# acompanhamento tem placa e plano de trabalho, que a inicial nao tem
+_MODELOS = Path(__file__).parent / "modelos"
+MODELOS = {
+    "inicial": _MODELOS / "relatorio_visita_inicial.docx",
+    "acompanhamento": _MODELOS / "relatorio_visita_acompanhamento.docx",
+}
+TIPO_PADRAO = "inicial"
 
 # Campo do modelo DOCX -> coluna do CSV do formulario "Vistoria - Adote uma
 # Praca - SEPE" (projeto 4). Por nome, e nao por posicao: campo novo no
@@ -199,7 +210,8 @@ def foto_padrao() -> bytes:
         img = Image.new("RGB", (400, 300), (235, 235, 235))
         desenho = ImageDraw.Draw(img)
         desenho.rectangle((8, 8, 391, 291), outline=(170, 170, 170), width=3)
-        desenho.text((200, 150), "SEM IMAGEM", fill=(120, 120, 120), anchor="mm")
+        fonte = ImageFont.load_default(size=44)
+        desenho.text((200, 150), "SEM IMAGEM", fill=(110, 110, 110), anchor="mm", font=fonte)
         saida = io.BytesIO()
         img.save(saida, "JPEG", quality=85)
         _SEM_FOTO = saida.getvalue()
@@ -219,13 +231,19 @@ def formatar_data(valor: str) -> str:
         return valor
 
 
-# perguntas de multipla escolha: o ODK grava o "name" da opcao, sem espaco
-# ("Plano_Piloto", "Sao_Sebastiao")
+# perguntas de multipla escolha: o ODK grava o "name" da opcao, sem espaco e
+# sem acento ("Plano_Piloto", "n_o" para "nao")
 CAMPOS_DE_ESCOLHA = ("cidade", "id_tipo_rel", "tipo_proj", "possui_placa", "plano_trabalho")
+ROTULOS_DE_ESCOLHA = {"n_o": "não"}
 
 
 def texto_de_escolha(valor: str) -> str:
-    return valor.replace("_", " ")
+    return ROTULOS_DE_ESCOLHA.get(valor, valor.replace("_", " "))
+
+
+def tipo_de_vistoria(planilha: Planilha, posicao: int) -> str:
+    tipo = planilha.valor(posicao, CAMPOS["id_tipo_rel"]).lower()
+    return tipo if tipo in MODELOS else TIPO_PADRAO
 
 
 def formatar_coordenada(valor: str) -> str:
@@ -260,12 +278,56 @@ def pedidos_de_fotos(planilha: Planilha, posicoes: Iterable[int]) -> set[tuple[s
     return pedidos
 
 
-def _tamanho_foto(foto: bytes) -> dict:
+_TWIPS_POR_CM = 567
+_MARGEM_CELULA_CM = 0.4
+
+
+@lru_cache(maxsize=8)
+def larguras_no_modelo(modelo: bytes) -> dict[str, float]:
+    """Largura (cm) da celula de tabela onde cada {{imagem_N}} esta no modelo.
+
+    O modelo de acompanhamento poe as fotos numa tabela de 2 colunas (~7 cm
+    cada); com a largura fixa de 14 cm, foto deitada estourava a celula.
+    Imagem fora de tabela nao entra aqui e usa FOTO_MAX_LARGURA_CM."""
+    larguras = {}
+    for t in Document(io.BytesIO(modelo)).element.body.iter(qn("w:t")):
+        achado = re.search(r"imagem_\d", t.text or "")
+        if not achado:
+            continue
+        celula = next((a for a in t.iterancestors() if a.tag == qn("w:tc")), None)
+        if celula is None:
+            continue
+        twips = _largura_celula(celula)
+        if twips:
+            larguras[achado.group(0)] = twips / _TWIPS_POR_CM - _MARGEM_CELULA_CM
+    return larguras
+
+
+def _largura_celula(celula) -> float | None:
+    """tcW da celula; sem ele (Google Docs nao grava), a coluna da grade."""
+    tc_w = celula.find(f"{qn('w:tcPr')}/{qn('w:tcW')}")
+    if tc_w is not None and tc_w.get(qn("w:type")) == "dxa":
+        return float(tc_w.get(qn("w:w")))
+    linha = celula.getparent()
+    tabela = linha.getparent()
+    grade = [float(c.get(qn("w:w"))) for c in tabela.findall(f"{qn('w:tblGrid')}/{qn('w:gridCol')}")]
+    coluna = 0
+    for tc in linha.findall(qn("w:tc")):
+        span = tc.find(f"{qn('w:tcPr')}/{qn('w:gridSpan')}")
+        n = int(span.get(qn("w:val"))) if span is not None else 1
+        if tc is celula:
+            return sum(grade[coluna:coluna + n]) or None
+        coluna += n
+    return None
+
+
+def _tamanho_foto(foto: bytes, largura_max_cm: float) -> dict:
     """Largura OU altura (o que limitar primeiro) para caber no espaco do modelo."""
+    largura_max_cm = min(largura_max_cm, FOTO_MAX_LARGURA_CM)
     with Image.open(io.BytesIO(foto)) as img:
         largura, altura = img.size
-    if largura / altura >= FOTO_MAX_LARGURA_CM / FOTO_MAX_ALTURA_CM:
-        return {"width": Cm(FOTO_MAX_LARGURA_CM)}
+    if largura / altura >= largura_max_cm / FOTO_MAX_ALTURA_CM:
+        return {"width": Cm(largura_max_cm)}
     return {"height": Cm(FOTO_MAX_ALTURA_CM)}
 
 
@@ -274,12 +336,14 @@ def gerar_docx(
 ) -> bytes:
     instancia = planilha.instancia(posicao)
     doc = DocxTemplate(io.BytesIO(modelo))
+    larguras = larguras_no_modelo(modelo)
 
-    def imagem(coluna: str) -> InlineImage:
+    def imagem(i: int, coluna: str) -> InlineImage:
         nome = planilha.valor(posicao, coluna)
         foto = fotos.get((instancia, nome)) if nome else None
         if foto:
-            return InlineImage(doc, io.BytesIO(foto), **_tamanho_foto(foto))
+            largura = larguras.get(f"imagem_{i}", FOTO_MAX_LARGURA_CM)
+            return InlineImage(doc, io.BytesIO(foto), **_tamanho_foto(foto, largura))
         return InlineImage(doc, io.BytesIO(foto_padrao()), Cm(LARGURA_SEM_FOTO_CM))
 
     contexto = {campo: planilha.valor(posicao, coluna) for campo, coluna in CAMPOS.items()}
@@ -290,7 +354,7 @@ def gerar_docx(
     contexto["lat"] = formatar_coordenada(contexto["lat"])
     contexto["long"] = formatar_coordenada(contexto["long"])
     for i, coluna in enumerate(IMAGENS, 1):
-        contexto[f"imagem_{i}"] = imagem(coluna)
+        contexto[f"imagem_{i}"] = imagem(i, coluna)
 
     doc.render(contexto)
     saida = io.BytesIO()
