@@ -27,8 +27,8 @@ Cada `git push` na `main` atualiza o app sozinho.
 - Escolha os registros (todos, marcando na tabela ou digitando `1, 3, 5-10`),
   envie o modelo DOCX e clique em *Gerar*.
 
-O número do relatório é a linha da planilha (o 1º registro é o relatório
-2), igual à versão anterior.
+O número do relatório é o mesmo da coluna # da tabela (o 1º registro é o
+relatório 1).
 
 ## Campos do modelo
 

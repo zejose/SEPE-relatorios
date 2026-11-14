@@ -193,12 +193,9 @@ def formatar_data(valor: str) -> str:
 
 
 def numero_relatorio(posicao: int) -> int:
-    """Numero que aparece no relatorio e no nome do arquivo.
-
-    E a linha da planilha (cabecalho = linha 1), como a versao anterior
-    fazia ao passar o CSV pelo Excel: o 1o registro e o relatorio 2.
-    """
-    return posicao + 2
+    """Numero que aparece no relatorio e no nome do arquivo -- o mesmo da
+    coluna # da tabela na tela."""
+    return posicao + 1
 
 
 def pedidos_de_fotos(planilha: Planilha, posicoes: Iterable[int]) -> set[tuple[str, str]]:
